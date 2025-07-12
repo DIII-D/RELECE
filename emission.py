@@ -15,7 +15,6 @@ f = 90e9                    # EM wave frequency (Hz)
 ne = 2e19                   # Electron number density (per m^3)
 fce = 50e9                  # Cyclotron frequency (Hz)
 Te = 3000                   # Electron temperature (eV)
-N = 0.874
 n = 2                       # ECE harmonic
 x_mode = True               # X or O mode
 theta = np.pi / 2           # Viewing angle
