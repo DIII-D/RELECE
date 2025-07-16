@@ -75,7 +75,7 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     :type wce: float
     :param theta: propagation angle
     :type theta: float
-    :param x_mode: whether the x_mode is selected
+    :param x_mode: whether the X mode is selected
     :type x_mode: bool
     :returns: cold plasma refraction index squared
     :rtype: float
@@ -99,7 +99,7 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     return N2_O
 
 
-def hermitian_dispersion(w, wpe, wce, theta, x_mode=False):
+def dij(w, wpe, wce, theta, x_mode=False):
     """Calculates equation 5.75 from the reference.
 
     The determinant of this tensor yields a quadratic expression for
@@ -119,7 +119,7 @@ def hermitian_dispersion(w, wpe, wce, theta, x_mode=False):
     :type wce: float
     :param theta: propagation angle
     :type theta: float
-    :param x_mode: whether the x_mode is selected
+    :param x_mode: whether the X mode is selected
     :type x_mode: bool
     :returns: cold plasma dispersion tensor
     :rtype: np.ndarray
@@ -141,3 +141,8 @@ def hermitian_dispersion(w, wpe, wce, theta, x_mode=False):
                     [D10, D11, D12],
                     [D20, D21, D22]])
     return Dij
+
+
+def stix_frame(w, wpe, wce, theta, x_mode):
+    """Calculates the normalized wave E field in the Stix frame."""
+    pass
