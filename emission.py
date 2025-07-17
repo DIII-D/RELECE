@@ -19,7 +19,6 @@ n = 2                       # ECE harmonic
 x_mode = True               # X or O mode
 theta = np.pi / 2           # Viewing angle
 res_ellipse_N = 1000        # Number of points on resonant ellipse
-tolerance = 0.001
 
 # Generated values
 w = 2*np.pi * f
@@ -42,26 +41,23 @@ def _calculate_refraction_coefs(w, wpe, wce, theta, tensor=False):
     D = (R - L) / 2
     A = S * np.sin(theta)**2 + P * np.cos(theta)**2
     B = R * L * np.sin(theta)**2 + P * S * (1 + np.cos(theta)**2)
-    F = (R*L - P*S)**2 * np.sin(theta)**4 + 4 * P**2 * D**2 * np.cos(theta)**2
+    F2 = (R*L - P*S)**2 * np.sin(theta)**4 + 4 * P**2 * D**2 * np.cos(theta)**2
+    F = np.sqrt(F2)
     if (tensor):
         return S, D, P
     return A, B, F
 
 
-def _refraction_modes(A, B, F):
-    """Return the refraction indices for both modes."""
-    N_plus = (B + F) / (2 * A)
-    N_minus = (B - F) / (2 * A)
-    return N_plus, N_minus
-
-
 def refraction(w, wpe, wce, theta, x_mode=False):
     """Calculates the cold plasma refraction index squared.
 
-    This index depends on the wave mode. The O mode is cut off (i.e.
-    N^2 <= 0) at the plasma frequency,  whereas the X mode still
-    propagates. This is the physical difference between the modes which
-    we shall use to select the correct one.
+    This index depends on the wave mode and is calculated using the
+    Appleton-Hartree equation. This equation yields a quadratic for N2,
+    which provides two roots. The perpendicular case (theta = pi/2)
+    tells us which root should be assigned to the O vs X mode. If the
+    wave frequency is greater than the cyclotron frequency, the "plus"
+    root is the O mode and the "minus" root is the X mode, and vice-
+    versa for the opposite case.
 
     Reference: R. Parker, “Electromagnetic waves in plasmas,” in
     Introduction to Plasma Physics I, MIT OpenCourseWare, 2006,
@@ -81,13 +77,11 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     :rtype: float
     """
     A, B, F = _calculate_refraction_coefs(w, wpe, wce, theta)
-    A_cutoff, B_cutoff, F_cutoff = _calculate_refraction_coefs(wpe, wpe, wce, theta)
-    N2_plus, N2_minus = _refraction_modes(A, B, F)
-    N2_plus_cutoff, _ = _refraction_modes(A_cutoff, B_cutoff,
-                                                        F_cutoff)
+    N2_plus = (B + F) / (2 * A)
+    N2_minus = (B - F) / (2 * A)
 
     # Select the wpe cutoff for the O mode
-    if (N2_plus_cutoff < tolerance):
+    if (w >= wce):
         N2_O = N2_plus
         N2_X = N2_minus
     else:
