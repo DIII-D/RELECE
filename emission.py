@@ -9,6 +9,8 @@ import numpy as np
 from scipy import constants, special
 import matplotlib.pyplot as plt
 
+import tensors
+
 
 # Parameters
 f = 90e9                    # EM wave frequency (Hz)
