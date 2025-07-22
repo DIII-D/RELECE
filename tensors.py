@@ -100,11 +100,19 @@ def eps_a(w, wpe, wce, n_par, n_perp, Te):
     e11 = a11 + n_perp**2 * (b11 + c11) + n_perp**4 * (d11 + f11 + g11)
     e12 = -1j * (a11 + n_perp**2 * (2*b11 + c11)
                  + n_perp**4 * (3*d11 + 3*f11/2 + g11))
+    e21 = -np.conj(e12)
     e22 = (a11 + n_perp**2 * (3*b11 + c11)
            + n_perp**4 * (37*d11/5 + 2*f11 + g11))
     e13 = n_perp * (a13 + n_perp**2 * (b13 + c13)
                     + n_perp**4 * (d13 + f13 + g13))
+    e31 = -np.conj(e13)
     e23 = 1j * n_perp * (a13 + n_perp**2 * (2*b13 + c13)
                          + n_perp**4 * (3*d13 + 3*f13/2 + g13))
+    e32 = -np.conj(e23)
     e33 = n_perp**2 * (a33 + n_perp**2 * (b33 + c33)
-                       + n_perp**4 * (d**3))
+                       + n_perp**4 * (d33 + f33 + g33))
+    
+    result = np.array([[e11, e12, e13],
+                       [e21, e22, e33],
+                       [e31, e32, e33]])
+    return result
