@@ -1,0 +1,13 @@
+# ECE detector conditions
+f = 90e9                    # EM wave frequency (Hz)
+n = 2                       # ECE harmonic
+x_mode = true               # X or O mode
+theta = "np.pi / 2"         # Viewing angle
+
+# Plasma parameters
+ne = 2e19                   # Electron number density (per m^3)
+Te = 3000                   # Electron temperature (eV)
+Bt = 1.8                    # Toroidal magnetic field (T) 
+
+# Simulation parameters
+res_ellipse_N = 1000        # Number of points on resonant ellipse

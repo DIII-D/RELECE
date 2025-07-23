@@ -1,6 +1,7 @@
 """
-This code calculates the tensors needed to perform ECE
-calculations."""
+This code calculates the absorption coefficients using the fully
+relativistic anti-Hermitian dielectric tensor.
+"""
 import numpy as np
 from scipy import constants, special
 
@@ -87,8 +88,32 @@ def _gij(w, wce, n_par, mu, a, R, s, xi, F, ps, q):
 
 
 def eps_a(w, wpe, wce, n_par, n_perp, Te):
+    """
+    Computes the fully relativistic anti-Hermitian dielectric tensor,
+    as given by Ref. [1].
+    
+    Parameters
+    ----------
+    w : scalar
+        Incident wave frequency (rad/s).
+    wpe : scalar
+        Plasma frequency (rad/s).
+    wce : scalar
+        Cyclotron frequency (rad/s).
+    n_par : scalar
+        Refractive index along the toroidal magnetic field.
+    n_perp : scalar
+        Refractive index perpendicular to the toroidal magnetic field.
+    Te : scalar
+        Background electron temperature (eV)
+    
+    Returns
+    -------
+    complex ndarray
+        The full 3-by-3 dielectric tensor.
+    """
     mu, a, R, s, xi, F, ps, q = _get_eps_h_coefs(w, wpe, wce, n_par, Te)
-    if (np.real(R) <= 0):
+    if np.real(R) <= 0:
         return np.zeros((3, 3))  # Accounts for the 'S' in [1]
     a11, a13, a33 = _aij(w, wce, a, R, s, xi, F, ps, q)
     b11, b13, b33 = _bij(w, wce, n_par, mu, a, R, s, xi, F, ps, q)
@@ -111,7 +136,7 @@ def eps_a(w, wpe, wce, n_par, n_perp, Te):
     e32 = -np.conj(e23)
     e33 = n_perp**2 * (a33 + n_perp**2 * (b33 + c33)
                        + n_perp**4 * (d33 + f33 + g33))
-    
+
     result = np.array([[e11, e12, e13],
                        [e21, e22, e33],
                        [e31, e32, e33]])
