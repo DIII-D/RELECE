@@ -9,6 +9,7 @@ import numpy as np
 from scipy.constants import c
 
 
+
 def _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=False):
     """Return coefficients needed to determine refraction index."""
     P = 1 - wpe**2 / w**2
