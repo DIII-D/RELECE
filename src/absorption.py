@@ -5,7 +5,7 @@ relativistic anti-Hermitian dielectric tensor.
 import numpy as np
 from scipy import constants, special
 
-### ANTI-HERMITIAN DIELECTRIC TENSOR ###
+
 def _get_eps_h_coefs(w, wpe, wce, n_par, Te):
     mu = constants.m_e * constants.c**2 / Te
     a = np.pi * (wpe/w)**2 / (4 * n_par**2 * special.kve(2, mu))
@@ -66,13 +66,13 @@ def _dij(w, wce, n_par, mu, a, R, s, xi, F, ps, q):
     for i in range(2):
         sum_11 += (1 + 6*s[i] / xi + 15 / xi**2 + 15*s[i] / xi**3) * F[s]
         sum_13 += (ps[i] * (1 + 6*s[i] / xi + 15 / xi**2 + 15*s / xi**3)
-                  + 2 * (q / xi) * (2 + 15*s[i] / xi + 45 / xi**2
-                                  + 105*s[i] / (2*xi**3))) * F[i]
+                   + 2 * (q / xi) * (2 + 15*s[i] / xi + 45 / xi**2
+                                     + 105*s[i] / (2*xi**3))) * F[i]
         sum_33 += (ps[i]**2 * (1 + 6*s[i] / xi + 15 / xi**2 + 15*s[i] / xi**3)
-                  + 4 * (q*ps[i] / xi) * (2 + 15*s / xi + 45 / xi**2
-                                        + 105*s[i] / (2*xi**3))
-                  + 10 * (q / xi)**2 * (2 + 18*s[i] / xi + 63 / xi**2
-                                        + 84*s / xi**3)) * F[i]
+                   + 4 * (q*ps[i] / xi) * (2 + 15*s / xi + 45 / xi**2
+                                           + 105*s[i] / (2*xi**3))
+                   + 10 * (q / xi)**2 * (2 + 18*s[i] / xi + 63 / xi**2
+                                         + 84*s / xi**3)) * F[i]
     d11 = a * R * (R / (n_par * mu))**2 * (5/8) * (w/wce)**4 * sum_11
     d13 = a * R * (R / (n_par * mu))**2 * (5/8) * (w/wce)**5 * sum_13
     d33 = a * R * (R / (n_par * mu))**2 * (5/8) * (w/wce)**6 * sum_33
@@ -91,7 +91,7 @@ def eps_a(w, wpe, wce, n_par, n_perp, Te):
     """
     Computes the fully relativistic anti-Hermitian dielectric tensor,
     as given by Ref. [1].
-    
+
     Parameters
     ----------
     w : scalar
@@ -106,7 +106,7 @@ def eps_a(w, wpe, wce, n_par, n_perp, Te):
         Refractive index perpendicular to the toroidal magnetic field.
     Te : scalar
         Background electron temperature (eV)
-    
+
     Returns
     -------
     complex ndarray
