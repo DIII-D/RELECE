@@ -6,6 +6,8 @@ gyrating electrons. In devices like DIII-D, ECE is exploited to measure
 the temperature profile of the plasma.
 """
 import numpy as np
+from scipy.constants import c
+
 
 def _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=False):
     """Return coefficients needed to determine refraction index."""
@@ -54,8 +56,8 @@ def refraction(w, wpe, wce, theta, x_mode=False):
 
     References
     ----------
-    .. [1] R. Parker, “Electromagnetic waves in plasmas,” in
-           Introduction to Plasma Physics I, MIT OpenCourseWare, 2006,
+    .. [1] Hutchinson, Ian, “Electromagnetic waves in plasmas,” in
+           Introduction to Plasma Physics I, MIT OpenCourseWare, 2003,
            pp. 96-1
     """
     A, B, F = _calculate_refraction_coefs(w, wpe, wce, theta)
@@ -73,6 +75,11 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     if x_mode:
         return nr2_X
     return nr2_O
+
+
+def wavenumber(n, w):
+    return n * w / c
+
 
 # def dij(w, wpe, wce, theta, x_mode=False):
 #     """Calculates equation 5.75 from the reference.
