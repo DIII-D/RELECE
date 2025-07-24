@@ -7,6 +7,7 @@ the temperature profile of the plasma.
 """
 import numpy as np
 
+
 def _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=False):
     """Return coefficients needed to determine refraction index."""
     P = 1 - wpe**2 / w**2
