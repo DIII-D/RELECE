@@ -6,8 +6,8 @@ gyrating electrons. In devices like DIII-D, ECE is exploited to measure
 the temperature profile of the plasma.
 """
 import numpy as np
+from scipy import linalg
 from scipy.constants import c
-
 
 
 def _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=False):
@@ -57,9 +57,9 @@ def refraction(w, wpe, wce, theta, x_mode=False):
 
     References
     ----------
-    .. [1] Hutchinson, Ian, “Electromagnetic waves in plasmas,” in
-           Introduction to Plasma Physics I, MIT OpenCourseWare, 2003,
-           pp. 96-1
+    .. [1] Hutchinson, Ian, 2003, “Electromagnetic waves in plasmas,”
+           *Introduction to Plasma Physics I*, MIT OpenCourseWare,
+           96-144.
     """
     A, B, F = _calculate_refraction_coefs(w, wpe, wce, theta)
     nr2_plus = (B + F) / (2 * A)
@@ -78,52 +78,111 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     return nr2_O
 
 
-def wavenumber(n, w):
-    return n * w / c
+def wavevector(nr, w, theta):
+    """Calculates the wave vector from the refraction index.
+
+    The wave is assumed to propagate in the x-z plane, with the
+    magnetic field along the z-axis.
+    """
+    k = nr * w / c
+    kx = k * np.sin(theta)
+    ky = 0
+    kz = k * np.cos(theta)
+    return np.array([kx, ky, kz])
 
 
-# def dij(w, wpe, wce, theta, x_mode=False):
-#     """Calculates equation 5.75 from the reference.
+def dispersion(w, wpe, wce, theta, x_mode=False):
+    """Calculates the dispersion tensor for cold plasma.
 
-#     The determinant of this tensor yields a quadratic expression for
-#     the cold plasma dispersion relation. It can also be used to
-#     determine the Stix frame as well as the hermitian dielectric
-#     tensor.
+    The determinant of this tensor yields a quadratic expression for
+    the cold plasma dispersion relation. It can also be used to
+    determine the Stix frame as well as the hermitian dielectric
+    tensor. It is referred to as Lambda in Ref. [1] and D in Ref. [2].
 
-#     Reference: R. Parker, “Electromagnetic waves in plasmas,” in
-#     Introduction to Plasma Physics I, MIT OpenCourseWare, 2006,
-#     pp. 96-144
+    Parameters
+    ----------
+    w : scalar
+        Incident wave frequency (rad/s).
+    wpe : scalar
+        Plasma frequency (rad/s).
+    wce : scalar
+        Cyclotron frequency (rad/s).
+    theta : scalar
+        Wave propagation angle.
+    x_mode : bool
+        Whether the X mode is selected.
 
-#     :param w: wave frequency
-#     :type w: float
-#     :param wpe: plasma frequency
-#     :type wpe: float
-#     :param wce: cyclotron frequency
-#     :type wce: float
-#     :param theta: propagation angle
-#     :type theta: float
-#     :param x_mode: whether the X mode is selected
-#     :type x_mode: bool
-#     :returns: cold plasma dispersion tensor
-#     :rtype: np.ndarray
-#     """
-#     S, D, P = _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=True)
-#     nr2 = refraction(w, wpe, wce, theta, x_mode)
+    Returns
+    -------
+    complex ndarray
+       Cold plasma dispersion tensor.
 
-#     D00 = -nr2 * np.cos(theta)**2 + S
-#     D01 = -1j * D
-#     D02 = nr2 * np.sin(theta) * np.cos(theta)
-#     D10 = 1j * D
-#     D11 = -nr2 + S
-#     D12 = 0
-#     D20 = nr2 * np.sin(theta) * np.cos(theta)
-#     D21 = 0
-#     D22 = -nr2 * np.sin(theta)**2 + P
+    References
+    ----------
+    .. [1] Bornatici, M., et al, 1983, "Electron cyclotron emission and
+           absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
+           1153-1257.
+    .. [2] Hutchinson, Ian, 2003, “Electromagnetic waves in plasmas,”
+           *Introduction to Plasma Physics I*, MIT OpenCourseWare,
+           96-144.
+    """
+    S, D, P = _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    nr2 = refraction(w, wpe, wce, theta, x_mode)
 
-#     Dij = np.array([[D00, D01, D02],
-#                     [D10, D11, D12],
-#                     [D20, D21, D22]])
-#     return Dij
+    D00 = -nr2 * np.cos(theta)**2 + S
+    D01 = -1j * D
+    D02 = nr2 * np.sin(theta) * np.cos(theta)
+    D10 = 1j * D
+    D11 = -nr2 + S
+    D12 = 0
+    D20 = nr2 * np.sin(theta) * np.cos(theta)
+    D21 = 0
+    D22 = -nr2 * np.sin(theta)**2 + P
+
+    Lambda = np.array([[D00, D01, D02],
+                       [D10, D11, D12],
+                       [D20, D21, D22]])
+    return Lambda
+
+
+def polarization(Lambda, k, w):
+    """
+    Calculates the electric field (polarization) from the dispersion
+    tensor. Since the dispersion tensor depends on frequency, the
+    result is in the Fourier domain.
+
+    Parameters
+    ----------
+    Lambda : complex ndarray
+        Cold plasma dispersion tensor.
+    k : complex ndarray
+        Wave vector (1/m).
+    w : scalar
+        Wave frequency (rad/s).
+
+    Returns
+    -------
+    complex ndarray
+        Electric and magnetic fields.
+
+    Raises
+    ------
+    ValueError
+        If the dispersion tensor does not have nullity 1.
+
+    References
+    ----------
+    .. [1] Bornatici, M., et al, 1983, "Electron cyclotron emission and
+           absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
+           1153-1257.
+    """
+    E = linalg.null_space(Lambda, rcond=1e-15)
+    if np.shape(E)[1] > 1:
+        raise ValueError("Dispersion tensor must have nullity 1.")
+
+    B = c / w * np.cross(k, E)
+
+    return E, B
 
 
 def cold_plasma_eps_h(w, wpe, wce, theta):
