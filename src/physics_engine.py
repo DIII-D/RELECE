@@ -57,9 +57,8 @@ def refraction(w, wpe, wce, theta, x_mode=False):
 
     References
     ----------
-    .. [1] Hutchinson, Ian, 2003, “Electromagnetic waves in plasmas,”
-           *Introduction to Plasma Physics I*, MIT OpenCourseWare,
-           96-144.
+    .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
+           McGraw-Hill, New York.
     """
     A, B, F = _calculate_refraction_coefs(w, wpe, wce, theta)
     nr2_plus = (B + F) / (2 * A)
@@ -97,7 +96,8 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
     The determinant of this tensor yields a quadratic expression for
     the cold plasma dispersion relation. It can also be used to
     determine the Stix frame as well as the hermitian dielectric
-    tensor. It is referred to as Lambda in Ref. [1] and D in Ref. [2].
+    tensor. It is referred to as Lambda in Ref. [1], although the
+    implemented derivation follows Ref. [2]
 
     Parameters
     ----------
@@ -122,9 +122,8 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
     .. [1] Bornatici, M., et al, 1983, "Electron cyclotron emission and
            absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
            1153-1257.
-    .. [2] Hutchinson, Ian, 2003, “Electromagnetic waves in plasmas,”
-           *Introduction to Plasma Physics I*, MIT OpenCourseWare,
-           96-144.
+    .. [2] Stix, T. H., 1962, *The Theory of Plasma Waves*,
+           McGraw-Hill, New York.
     """
     S, D, P = _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=True)
     nr2 = refraction(w, wpe, wce, theta, x_mode)
