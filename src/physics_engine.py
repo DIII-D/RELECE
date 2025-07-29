@@ -171,9 +171,8 @@ def polarization(Lambda, k, w):
 
     References
     ----------
-    .. [1] Bornatici, M., et al, 1983, "Electron cyclotron emission and
-           absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
-           1153-1257.
+    .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
+           McGraw-Hill, New York.
     """
     E = linalg.null_space(Lambda, rcond=1e-15)
     if np.shape(E)[1] > 1:
