@@ -10,11 +10,11 @@ from scipy import linalg
 from scipy.constants import c
 
 
-def _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=False):
+def refraction_coefs(w, wpe, wce, theta, eps_h=False):
     """Return coefficients needed to determine refraction index."""
     P = 1 - wpe**2 / w**2
-    R = 1 - wpe**2 / (w * (w+wce))
-    L = 1 - wpe**2 / (w * (w-wce))
+    R = 1 - wpe**2 / (w * (w-wce))
+    L = 1 - wpe**2 / (w * (w+wce))
     S = (R + L) / 2
     D = (R - L) / 2
     if eps_h:
@@ -27,7 +27,7 @@ def _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=False):
 
 
 def refraction(w, wpe, wce, theta, x_mode=False):
-    """Calculates the cold plasma refraction index squared.
+    """Calculates parallel and perpendicular refractive indices.
 
     This index depends on the wave mode and is calculated using the
     Appleton-Hartree equation. This equation yields a quadratic for nr2,
@@ -52,29 +52,36 @@ def refraction(w, wpe, wce, theta, x_mode=False):
 
     Returns
     -------
-    scalar
-        Cold plasma refraction index squared.
+    n_perp : scalar
+        Perpendicular refractive index.
+    n_par : scalar
+        Parallel refractive index.
 
     References
     ----------
     .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    A, B, F = _calculate_refraction_coefs(w, wpe, wce, theta)
-    nr2_plus = (B + F) / (2 * A)
-    nr2_minus = (B - F) / (2 * A)
+    A, B, F = refraction_coefs(w, wpe, wce, theta)
+    n2_plus = (B + F) / (2 * A)
+    n2_minus = (B - F) / (2 * A)
 
     # Select the wpe cutoff for the O mode
     if w >= wce:
-        nr2_O = nr2_plus
-        nr2_X = nr2_minus
+        n2_O = n2_plus
+        n2_X = n2_minus
     else:
-        nr2_O = nr2_minus
-        nr2_X = nr2_plus
+        n2_O = n2_minus
+        n2_X = n2_plus
 
     if x_mode:
-        return nr2_X
-    return nr2_O
+        n2 = n2_X
+    else:
+        n2 = n2_O
+    n = np.sqrt(n2)
+    n_perp = np.sin(theta) * n
+    n_par = np.cos(theta) * n
+    return n_perp, n_par
 
 
 def wavevector(nr, w, theta):
@@ -97,7 +104,7 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
     the cold plasma dispersion relation. It can also be used to
     determine the Stix frame as well as the hermitian dielectric
     tensor. It is referred to as Lambda in Ref. [1], although the
-    implemented derivation follows Ref. [2]
+    implementation follows Ref. [2].
 
     Parameters
     ----------
@@ -125,18 +132,19 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
     .. [2] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    S, D, P = _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=True)
-    nr2 = refraction(w, wpe, wce, theta, x_mode)
+    S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    n_perp, n_par = refraction(w, wpe, wce, theta, x_mode)
+    n2 = n_perp**2 + n_par**2
 
-    D00 = -nr2 * np.cos(theta)**2 + S
+    D00 = -n2 * np.cos(theta)**2 + S
     D01 = -1j * D
-    D02 = nr2 * np.sin(theta) * np.cos(theta)
+    D02 = n2 * np.sin(theta) * np.cos(theta)
     D10 = 1j * D
-    D11 = -nr2 + S
+    D11 = -n2 + S
     D12 = 0
-    D20 = nr2 * np.sin(theta) * np.cos(theta)
+    D20 = n2 * np.sin(theta) * np.cos(theta)
     D21 = 0
-    D22 = -nr2 * np.sin(theta)**2 + P
+    D22 = -n2 * np.sin(theta)**2 + P
 
     Lambda = np.array([[D00, D01, D02],
                        [D10, D11, D12],
@@ -185,9 +193,25 @@ def polarization(Lambda, k, w):
 
 def cold_plasma_eps_h(w, wpe, wce, theta):
     """
-    TODO: write docstring
+    Calculates the cold plasma Hermitian dielectric tensor.
+
+    Parameters
+    ----------
+    w : scalar
+        Incident wave frequency (rad/s).
+    wpe : scalar
+        Plasma frequency (rad/s).
+    wce : scalar
+        Cyclotron frequency (rad/s).
+    theta : scalar
+        Wave propagation angle.
+
+    Returns
+    -------
+    complex ndarray
+        Cold plasma Hermitian dielectric tensor.
     """
-    S, D, P = _calculate_refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
 
     eps00 = S
     eps01 = -1j * D
@@ -214,12 +238,11 @@ def _refraction_derivs(w, wpe, wce):
     return dSdw, dDdw, dPdw
 
 
-def cold_plasma_dweps_hdw(w, wpe, wce, theta):
+def cold_plasma_dwepshdw(w, wpe, wce, eps_h):
     """
     Calculates the derivative of w times eps_h. This quantity is needed
     in order to calculate the spectral energy density.
     """
-    eps_h = cold_plasma_eps_h(w, wpe, wce, theta)
     dSdw, dDdw, dPdw = _refraction_derivs(w, wpe, wce)
 
     deps00 = dSdw

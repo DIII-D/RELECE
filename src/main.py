@@ -9,7 +9,7 @@ import tomllib
 from ast import literal_eval
 import numpy as np
 from scipy import constants
-import physics_engine
+import utils
 
 with open("config/params.toml", "rb") as f:
     params = tomllib.load(f)
@@ -25,9 +25,9 @@ gamma_th = 1 / np.sqrt(1 - (v_th / constants.c)**2)  # thermal Lorentz factor
 wce = constants.e * params['B'] / (gamma_th * constants.m_e)
 wr = wce / 2 * (1 + np.sqrt(1 + 4 * wpe**2/wce**2))  # RH cutoff (rad/s)
 theta = literal_eval(params['theta'])
-nr = np.sqrt(physics_engine.refraction(w, wpe, wce, theta, params['x_mode']))
+nr = np.sqrt(utils.refraction(w, wpe, wce, theta, params['x_mode']))
 n_par = nr * np.cos(theta)
 n_perp = nr * np.sin(theta)
-k = physics_engine.wavevector(nr, w)
+k = utils.wavevector(nr, w)
 k_par = k[2]
 k_perp = k[0]
