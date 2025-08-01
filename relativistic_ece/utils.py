@@ -10,15 +10,20 @@ from scipy import linalg
 from scipy.constants import c
 
 
-def refraction_coefs(w, wpe, wce, theta, eps_h=False):
-    """Return coefficients needed to determine refraction index."""
+def refraction_coefs(w, wpe, wce, theta, eps_h=False, nu=1e-6):
+    """
+    Return coefficients needed to determine refraction index. Note that
+    an infinitesimmaly small nu is added to the wave frequency to
+    account for Stix's causality presciption and handle singularities.
+    """
+    w = w + 1j * nu
     P = 1 - wpe**2 / w**2
-    R = 1 - wpe**2 / (w * (w-wce))
-    L = 1 - wpe**2 / (w * (w+wce))
+    R = 1 - wpe**2 / (w * (w - wce))
+    L = 1 - wpe**2 / (w * (w + wce))
     S = (R + L) / 2
     D = (R - L) / 2
     if eps_h:
-        return S, D, P
+        return R, L, S, D, P
     A = S * np.sin(theta)**2 + P * np.cos(theta)**2
     B = R * L * np.sin(theta)**2 + P * S * (1 + np.cos(theta)**2)
     F2 = (R*L - P*S)**2 * np.sin(theta)**4 + 4 * P**2 * D**2 * np.cos(theta)**2
@@ -67,7 +72,7 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     n2_minus = (B - F) / (2 * A)
 
     # Select the wpe cutoff for the O mode
-    if w >= wce:
+    if w > wce:
         n2_O = n2_plus
         n2_X = n2_minus
     else:
@@ -132,7 +137,7 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
     .. [2] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    _, _, S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
     n_perp, n_par = refraction(w, wpe, wce, theta, x_mode)
     n2 = n_perp**2 + n_par**2
 
@@ -211,7 +216,7 @@ def cold_plasma_eps_h(w, wpe, wce, theta):
     complex ndarray
         Cold plasma Hermitian dielectric tensor.
     """
-    S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    _, _, S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
 
     eps00 = S
     eps01 = -1j * D
