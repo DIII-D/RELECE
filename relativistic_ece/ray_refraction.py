@@ -9,7 +9,7 @@ References
 """
 import numpy as np
 
-from . import utils
+from relativistic_ece.utils import refraction_coefs
 
 
 def _nr_coefs(w, wpe, wce, theta):
@@ -17,8 +17,8 @@ def _nr_coefs(w, wpe, wce, theta):
     Calculates the coefficients A, B, and F in the Appleton-Hartree
     equation for the refractive index.
     """
-    R, L, S, _, P = utils.refraction_coefs(w, wpe, wce, theta, eps_h=True)
-    A, B, _ = utils.refraction_coefs(w, wpe, wce, theta)
+    R, L, S, _, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    A, B, _ = refraction_coefs(w, wpe, wce, theta)
     Ap = (S - P) * np.sin(2*theta)
     Bp = (R*L - P*S) * np.sin(2*theta)
     App = 2 * (S - P) * np.cos(2*theta)
@@ -33,8 +33,6 @@ def _dndtheta(n, A, B, Ap, Bp):
     """
     n2 = n**2
     np1 = (n / 2) * (Bp - Ap * n2) / (2 * A * n2 - B)
-    if np.isnan(np1):
-        np1 = 0  # Account for tenuous plasma where denominator vanishes
     return np1
 
 
@@ -65,10 +63,10 @@ def _nr_xyz(n, np1, npp, theta):
     return y, zp
 
 
-def ray_refraction(n, w, wpe, wce, theta):
+def ray_refraction(n, w, wpe, wce, theta, nu=1e-6):
     """
-    Calculates the square of the ray refractive index in a magnetized
-    cold plasma as defined in Ref. [1].
+    Calculates the ray refractive index in a magnetized cold plasma as
+    defined in Ref. [1].
 
     Parameters
     ----------
@@ -87,8 +85,8 @@ def ray_refraction(n, w, wpe, wce, theta):
 
     Returns
     -------
-    complex ndarray
-        Ray refractive index squared.
+    scalar : nr
+        Ray refractive index.
 
     References
     ----------
@@ -97,9 +95,15 @@ def ray_refraction(n, w, wpe, wce, theta):
     .. [2] Stix, T. H., 1992, *Waves in Plasmas*, AIP Press, New York.
     """
     A, B, Ap, Bp, App, Bpp = _nr_coefs(w, wpe, wce, theta)
+    n2 = n**2
+    F = 2 * A * n2 - B
+    degenerate_mask = np.isclose(F, 0)
+    if np.isclose(F.all(), 0):
+        return n  # If F is zero, the modes are degenerate
     np1 = _dndtheta(n, A, B, Ap, Bp)
     npp = _d2ndtheta2(n, np1, A, B, Ap, Bp, App, Bpp)
     y, zp = _nr_xyz(n, np1, npp, theta)
 
-    nr2 = np.abs(n**2 * np.sin(theta) * y / zp)
-    return nr2
+    nr2 = np.abs(n2 * np.sin(theta) * y / zp)
+    nr2 = np.where(degenerate_mask, n2, nr2)  # Handle degenerate case
+    return np.sqrt(nr2)

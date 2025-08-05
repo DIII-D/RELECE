@@ -13,8 +13,9 @@ from scipy.constants import c
 def refraction_coefs(w, wpe, wce, theta, eps_h=False, nu=1e-6):
     """
     Return coefficients needed to determine refraction index. Note that
-    an infinitesimmaly small nu is added to the wave frequency to
-    account for Stix's causality presciption and handle singularities.
+    an infinitesimally small collision term is added to the wave
+    frequency to account for Stix's causality prescription and handle
+    singularities.
     """
     w = w + 1j * nu
     P = 1 - wpe**2 / w**2
@@ -57,10 +58,8 @@ def refraction(w, wpe, wce, theta, x_mode=False):
 
     Returns
     -------
-    n_perp : scalar
-        Perpendicular refractive index.
-    n_par : scalar
-        Parallel refractive index.
+    n : scalar
+        Refractive index.
 
     References
     ----------
@@ -83,19 +82,16 @@ def refraction(w, wpe, wce, theta, x_mode=False):
         n2 = n2_X
     else:
         n2 = n2_O
-    n = np.sqrt(n2)
-    n_perp = np.sin(theta) * n
-    n_par = np.cos(theta) * n
-    return n_perp, n_par
+    return np.sqrt(n2)
 
 
-def wavevector(nr, w, theta):
+def wavevector(n, w, theta):
     """Calculates the wave vector from the refraction index.
 
     The wave is assumed to propagate in the x-z plane, with the
     magnetic field along the z-axis.
     """
-    k = nr * w / c
+    k = n * w / c
     kx = k * np.sin(theta)
     ky = 0
     kz = k * np.cos(theta)
@@ -138,7 +134,10 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
            McGraw-Hill, New York.
     """
     _, _, S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
-    n_perp, n_par = refraction(w, wpe, wce, theta, x_mode)
+    n = refraction(w, wpe, wce, theta, x_mode)
+    n2 = n**2
+    n_perp = n * np.sin(theta)
+    n_par = n * np.cos(theta)
     n2 = n_perp**2 + n_par**2
 
     D00 = -n2 * np.cos(theta)**2 + S

@@ -9,7 +9,7 @@ import tomllib
 from ast import literal_eval
 import numpy as np
 from scipy import constants
-import utils
+import relativistic_ece.utils as utils
 
 with open("config/params.toml", "rb") as f:
     params = tomllib.load(f)

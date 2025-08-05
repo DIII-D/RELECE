@@ -3,16 +3,64 @@ from relativistic_ece.utils import refraction
 from relativistic_ece.ray_refraction import ray_refraction
 
 
-def test_isotropic_nr():
-    w = 2*np.pi * 100e9  # Example frequency in rad/s
-    wpe = 2*np.pi * 40e9  # Example plasma frequency in rad/s
-    wce = 2*np.pi * 1e5  # Example cyclotron frequency in rad/s
-    theta = np.pi / 2  # Arbitrary angle, can be set to 0 for isotropic case
+# --- Test Cases ---
 
-    n_perp, n_par = refraction(w, wpe, wce, theta)
-    n = np.sqrt(n_perp**2 + n_par**2)
-    nr = np.sqrt(ray_refraction(n, w, wpe, wce, theta))
-    print(f"Refractive index: {nr}")
-    print(f"Expected refractive index for isotropic case: {n}")
+# Define a set of plasma parameters to use in the tests
+# Frequencies are in rad/s
+WAVE_FREQ = 1.5e11  # Wave frequency (24 GHz)
+PLASMA_FREQ = 0.8e11  # Plasma frequency
+CYCLOTRON_FREQ = 1.0e11  # Electron cyclotron frequency
 
-    assert np.isclose(nr, n, rtol=1e-3), f"Expected {n}, got {nr}"
+
+def test_vacuum():
+    """
+    Test Case 1: Vacuum
+    In a vacuum (wpe=0, wce=0), the refractive index n should be 1,
+    and the ray refractive index nr should also be 1.
+    """
+    wpe_vac = 0
+    wce_vac = 0
+    theta = np.pi / 4  # Angle shouldn't matter
+
+    # Calculate phase refractive index components
+    n = refraction(WAVE_FREQ, wpe_vac, wce_vac, theta)
+    nr = ray_refraction(n, WAVE_FREQ, wpe_vac, wce_vac, theta)
+    assert np.isclose(nr, 1.0), f"Expected 1.0, got {nr}"
+
+
+def test_isotropic_medium():
+    """
+    Test Case 2: Isotropic Medium
+    In an isotropic medium (wce = 0), the refractive index n should be
+    the same as the ray refractive index nr.
+    """
+    wce_iso = 0
+    theta = np.pi / 4  # Angle shouldn't matter
+
+    # Calculate phase refractive index components
+    n = refraction(WAVE_FREQ, PLASMA_FREQ, wce_iso, theta)
+
+    # Calculate ray refractive index squared (should also be 1)
+    nr = ray_refraction(n, WAVE_FREQ, PLASMA_FREQ, wce_iso, theta)
+    assert np.isclose(nr, n), f"Expected {n}, got {nr}"
+
+
+def test_bekefi_point_8():
+    """
+    Test Bekefi point 8.
+    """
+    w = WAVE_FREQ
+    wpe = (1 - 1e-5) * w  # Slightly below w to avoid singularity
+    wce = 3 / 2 * w
+    theta = np.pi / 2  # Perpendicular propagation
+
+    no = refraction(w, wpe, wce, theta, x_mode=False)
+    nx = refraction(w, wpe, wce, theta, x_mode=True)
+    nro = ray_refraction(no, w, wpe, wce, theta)
+    nrx = ray_refraction(nx, w, wpe, wce, theta)
+
+    assert np.isclose(nro, 1), f"Expected 1 for O mode, got {nro}"
+    assert np.isclose(nrx, 1), f"Expected 0 for X mode, got {nrx}"
+
+
+test_bekefi_point_8()
