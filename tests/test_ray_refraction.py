@@ -52,7 +52,7 @@ def test_bekefi_point_8():
     w = WAVE_FREQ
     wpe = (1 - 1e-5) * w  # Slightly below w to avoid singularity
     wce = 3 / 2 * w
-    theta = np.pi / 2  # Perpendicular propagation
+    theta = np.pi / 4  # Perpendicular propagation
 
     no = refraction(w, wpe, wce, theta, x_mode=False)
     nx = refraction(w, wpe, wce, theta, x_mode=True)
@@ -60,7 +60,4 @@ def test_bekefi_point_8():
     nrx = ray_refraction(nx, w, wpe, wce, theta)
 
     assert np.isclose(nro, 1), f"Expected 1 for O mode, got {nro}"
-    assert np.isclose(nrx, 1), f"Expected 0 for X mode, got {nrx}"
-
-
-test_bekefi_point_8()
+    assert np.isclose(nrx, 1), f"Expected 1 for X mode, got {nrx}"

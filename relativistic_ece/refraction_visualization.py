@@ -56,7 +56,7 @@ w = 1.0  # Relative frequency for demonstration
 # Define 8 pairs of (alpha2, beta2) parameters for the 8 subplots
 # These values are chosen to show a variety of shapes.
 params = [
-    (1/3, 3/4), (4/9, 1-1e-6), (2/3, 3/2), (1-1e-6, 9/4)
+    (1/3, 3/4), (4/9, 1-1e-6), (2/3, 3/2), (1, 9/4-1e-3)
 ]
 
 # Create a figure and a 1x4 grid of subplots.
@@ -79,6 +79,7 @@ for i, ax in enumerate(axes_flat):
     )
     ax.set_theta_offset(np.pi / 2)
     ax.set_rticks([1])
+    ax.set_rlim(0, 1.5)
     ax.grid(True)
 
 # Add a single legend for the entire figure
