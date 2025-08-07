@@ -9,7 +9,7 @@ References
 """
 import numpy as np
 
-from relativistic_ece.utils import refraction_coefs
+from relece.utils import refraction_coefs
 
 
 def _nr_coefs(w, wpe, wce, theta):

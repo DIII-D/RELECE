@@ -1,4 +1,4 @@
-from relativistic_ece.utils import refraction, refraction_coefs
+from relece.utils import refraction, refraction_coefs
 import numpy as np
 
 

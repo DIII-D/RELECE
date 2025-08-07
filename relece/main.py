@@ -1,15 +1,7 @@
-"""
-ECE signature modeling
-
-Electron cyclotron emission (ECE) is the phenomenon of radiation from
-gyrating electrons. In devices like DIII-D, ECE is exploited to measure
-the temperature profile of the plasma.
-"""
 import tomllib
-from ast import literal_eval
 import numpy as np
 from scipy import constants
-import relativistic_ece.utils as utils
+from relece import utils
 
 with open("config/params.toml", "rb") as f:
     params = tomllib.load(f)
@@ -22,12 +14,12 @@ v_th = np.sqrt(params['Te']
                * constants.physical_constants['electron volt-joule relationship'][0]
                / constants.m_e)
 gamma_th = 1 / np.sqrt(1 - (v_th / constants.c)**2)  # thermal Lorentz factor
-wce = constants.e * params['B'] / (gamma_th * constants.m_e)
+wce = constants.e * params['Bt'] / (gamma_th * constants.m_e)
 wr = wce / 2 * (1 + np.sqrt(1 + 4 * wpe**2/wce**2))  # RH cutoff (rad/s)
-theta = literal_eval(params['theta'])
-nr = np.sqrt(utils.refraction(w, wpe, wce, theta, params['x_mode']))
-n_par = nr * np.cos(theta)
-n_perp = nr * np.sin(theta)
-k = utils.wavevector(nr, w)
+theta = eval(params['theta'])
+n = np.sqrt(utils.refraction(w, wpe, wce, theta, params['x_mode']))
+n_par = n * np.cos(theta)
+n_perp = n * np.sin(theta)
+k = utils.wavevector(n, w, theta)
 k_par = k[2]
 k_perp = k[0]

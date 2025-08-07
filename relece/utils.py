@@ -99,13 +99,13 @@ def wavevector(n, w, theta):
 
 
 def dispersion(w, wpe, wce, theta, x_mode=False):
-    """Calculates the dispersion tensor for cold plasma.
+    """
+    Calculates the dispersion tensor for cold plasma.
 
     The determinant of this tensor yields a quadratic expression for
     the cold plasma dispersion relation. It can also be used to
     determine the Stix frame as well as the hermitian dielectric
-    tensor. It is referred to as Lambda in Ref. [1], although the
-    implementation follows Ref. [2].
+    tensor.
 
     Parameters
     ----------
@@ -127,11 +127,11 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
 
     References
     ----------
-    .. [1] Bornatici, M., et al, 1983, "Electron cyclotron emission and
+    .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
+           McGraw-Hill, New York.
+    .. [2] Bornatici, M., et al, 1983, "Electron cyclotron emission and
            absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
            1153-1257.
-    .. [2] Stix, T. H., 1962, *The Theory of Plasma Waves*,
-           McGraw-Hill, New York.
     """
     _, _, S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
     n = refraction(w, wpe, wce, theta, x_mode)

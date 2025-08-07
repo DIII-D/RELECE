@@ -1,6 +1,6 @@
 import numpy as np
-from relativistic_ece.utils import refraction
-from relativistic_ece.ray_refraction import ray_refraction
+from relece.utils import refraction
+from relece.ray_refraction import ray_refraction
 
 
 # --- Test Cases ---

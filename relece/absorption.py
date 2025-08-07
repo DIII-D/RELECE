@@ -6,7 +6,11 @@ import numpy as np
 from scipy.constants import c, m_e
 from scipy.special import jv, jvp
 
-
+"""
+The following commented code derives the anti-Hermitian dielectric
+tensor from the relativistic Maxwellian distribution function. It has
+been discarded in favor of a more general approach.
+"""
 # def _get_eps_h_coefs(w, wpe, wce, n_par, Te):
 #     mu = m_e * c**2 / Te
 #     a = np.pi * (wpe/w)**2 / (4 * n_par**2 * special.kve(2, mu))
@@ -112,6 +116,11 @@ from scipy.special import jv, jvp
 #     -------
 #     complex ndarray
 #         The full 3-by-3 dielectric tensor.
+
+#     References
+#     ----------
+#     .. [1] E. Mazzucato, I. Fidone, and G. Granata, Phys. Fluids
+#            **30**, 3745 (1987).
 #     """
 #     mu, a, R, s, xi, F, ps, q = _get_eps_h_coefs(w, wpe, wce, n_par, Te)
 #     if np.real(R) <= 0:

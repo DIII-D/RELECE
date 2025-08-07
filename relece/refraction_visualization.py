@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from fractions import Fraction
-from relativistic_ece.utils import refraction
-from relativistic_ece.ray_refraction import ray_refraction
+from relece.utils import refraction
+from relece.ray_refraction import ray_refraction
 
 
 def produce_refraction_data(theta, w, alpha2, beta2, ray=False):
@@ -55,8 +55,11 @@ w = 1.0  # Relative frequency for demonstration
 
 # Define 8 pairs of (alpha2, beta2) parameters for the 8 subplots
 # These values are chosen to show a variety of shapes.
+# params = [
+#     (1/3, 3/4), (4/9, 1), (2/3, 3/2), (1, 9/4-1e-3)
+# ]
 params = [
-    (1/3, 3/4), (4/9, 1-1e-6), (2/3, 3/2), (1, 9/4-1e-3)
+    (2/9, 1/2), (1/4, 9/16), (4/15, 3/5), (4/13, 9/13)
 ]
 
 # Create a figure and a 1x4 grid of subplots.
@@ -69,7 +72,7 @@ for i, ax in enumerate(axes_flat):
 
     ro, rx = produce_refraction_data(theta, w, alpha2, beta2, ray=True)
     ax.plot(theta, ro, label='O mode', color='b')
-    ax.plot(theta, rx, label='X mode', color='r', linestyle='--')
+    # ax.plot(theta, rx, label='X mode', color='r', linestyle='--')
 
     ax.set_title(
         f'$\\alpha^2={str(Fraction(alpha2).limit_denominator())}$; '
@@ -79,7 +82,7 @@ for i, ax in enumerate(axes_flat):
     )
     ax.set_theta_offset(np.pi / 2)
     ax.set_rticks([1])
-    ax.set_rlim(0, 1.5)
+    # ax.set_rlim(0, 1.5)
     ax.grid(True)
 
 # Add a single legend for the entire figure
