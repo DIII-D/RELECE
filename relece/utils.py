@@ -7,7 +7,9 @@ the temperature profile of the plasma.
 """
 import numpy as np
 from scipy import linalg
-from scipy.constants import c
+from scipy.constants import m_e, c
+from scipy.integrate import quad
+from scipy.special import jv, jvp
 
 
 def refraction_coefs(w, wpe, wce, theta, eps_h=False, nu=1e-6):
@@ -264,3 +266,76 @@ def cold_plasma_dwepshdw(w, wpe, wce, eps_h):
                          [deps20, deps21, deps22]])
     dweps_hdw = eps_h + w * deps_hdw
     return dweps_hdw
+
+
+def gradf(phi):
+    pass
+
+
+def hermitian_Sn_bar(u_par, u_perp, n_perp, n, Y):
+    b = np.abs(n_perp * u_perp / Y)
+    Jn = jv(n, b)
+    Jnp = jvp(n, b)
+
+    Sn00 = u_perp * (n * Jn / b)**2
+    Sn01 = -1j * u_perp * (n * Jn * Jnp / b)
+    Sn02 = u_par * (n * Jn**2 / b)
+    Sn10 = np.conj(Sn01)
+    Sn11 = u_perp * Jnp**2
+    Sn12 = 1j * u_par * Jn * Jnp
+    Sn20 = np.conj(Sn02)
+    Sn21 = np.conj(Sn12)
+    Sn22 = u_par**2 / u_perp * Jn**2
+
+    Sn = np.array([[Sn00, Sn01, Sn02],
+                   [Sn10, Sn11, Sn12],
+                   [Sn20, Sn21, Sn22]])
+    Sn_bar = Sn / (m_e * c)
+    return Sn_bar
+
+
+def eps_a_int(phi, w, wce, n, n_perp, n_par):
+    Y = wce / w
+    A2 = 1 - n_par**2  # n_par < 1 so A^2 > 0
+    R = np.sqrt(np.abs(n**2 * Y**2 - A2) / A2)
+    A = np.sqrt(A2)
+    u_perp = R * np.sin(phi)
+    u_par = n_par * n * Y / (1 - n_par**2) + (R / A) * np.cos(phi)
+    gamma = np.sqrt(1 + u_perp**2 + u_par**2)
+    dfdu_perp, dfdu_par = m_e * c * gradf(phi)
+    U_bar = 1 / gamma * (n * wce / w * dfdu_perp + n_par * u_perp * dfdu_par)
+    Sn_bar = hermitian_Sn_bar(u_par, u_perp, n_perp, n, Y)
+
+    # differential of u3 over dphi
+    d3udphi = 2 * np.pi * R * np.sin(phi) * R**2 / A
+    integrand = d3udphi * U_bar * Sn_bar
+    return integrand
+
+
+def eps_a_n(n, w, wce, n_perp, n_par):
+    """
+    Calculates the integral of the spectral energy density over the
+    angle phi. This is used to calculate the absorption coefficient.
+
+    Parameters
+    ----------
+    n : scalar
+        Refractive index.
+    w : scalar
+        Wave frequency (rad/s).
+    wce : scalar
+        Cyclotron frequency (rad/s).
+    n_perp : scalar
+        Perpendicular refractive index.
+    n_par : scalar
+        Parallel refractive index.
+
+    Returns
+    -------
+    complex ndarray
+        Integral of the spectral energy density.
+    """
+    integral, _ = quad(
+        eps_a_int, 0, np.pi, args=(w, wce, n, n_perp, n_par), points=(0, np.pi)
+    )
+    return integral

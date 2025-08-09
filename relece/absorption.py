@@ -153,23 +153,4 @@ been discarded in favor of a more general approach.
 #     return result
 
 
-def hermitian_Sn_bar(p_par, p_perp, k_perp, n, wce):
-    b = np.abs(k_perp * p_perp / (m_e * wce))
-    Jn = jv(n, b)
-    Jnp = jvp(n, b)
 
-    Sn00 = p_perp * (n * Jn / b)**2
-    Sn01 = -1j * p_perp * (n * Jn * Jnp / b)
-    Sn02 = p_par * (n * Jn**2 / b)
-    Sn10 = np.conj(Sn01)
-    Sn11 = p_perp * Jnp**2
-    Sn12 = 1j * p_par * Jn * Jnp
-    Sn20 = np.conj(Sn02)
-    Sn21 = np.conj(Sn12)
-    Sn22 = p_par**2 / p_perp * Jn**2
-
-    Sn = np.array([[Sn00, Sn01, Sn02],
-                   [Sn10, Sn11, Sn12],
-                   [Sn20, Sn21, Sn22]])
-    Sn_bar = p_perp * Sn / (m_e * c)**2
-    return Sn_bar
