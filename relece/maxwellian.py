@@ -54,4 +54,9 @@ from scipy.special import kve
 #     return fm_bar, Un_bar
 
 
-def relativistic_maxwellian(jx=300, )
+def relativistic_maxwellian(Te, jx=300, iy=200, enorm=200):
+    gamma = enorm * 1e3 / (m_e * c**2)
+    vnorm = c * np.sqrt(gamma**2 - 1)
+    v = np.linspace(0, vnorm, num=jx)
+    theta = np.linspace(0, 2 * np.pi, num=iy)
+
