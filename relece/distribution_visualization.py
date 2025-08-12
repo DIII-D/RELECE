@@ -14,4 +14,3 @@ ax = fig.add_subplot(111, projection='3d')
 ax.plot_surface(xgrid, ygrid, f, cmap=colormaps['viridis'], rstride=1, cstride=1)
 
 plt.show()
-

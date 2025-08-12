@@ -8,8 +8,8 @@ the temperature profile of the plasma.
 import numpy as np
 from scipy import linalg
 from scipy.constants import m_e, c
-from scipy.integrate import quad
 from scipy.special import jv, jvp
+from scipy.interpolate import interpn
 
 
 def refraction_coefs(w, wpe, wce, theta, eps_h=False, nu=1e-6):
@@ -268,11 +268,10 @@ def cold_plasma_dwepshdw(w, wpe, wce, eps_h):
     return dweps_hdw
 
 
-def gradf(phi):
-    pass
-
-
-def hermitian_Sn_bar(u_par, u_perp, n_perp, n, Y):
+def get_Sn_bar(u_par, u_perp, n_perp, n, Y):
+    """This Sn_bar is a factor of 1/u_perp from that of Smirnov and
+    Harvey.
+    """
     b = np.abs(n_perp * u_perp / Y)
     Jn = jv(n, b)
     Jnp = jvp(n, b)
@@ -294,33 +293,36 @@ def hermitian_Sn_bar(u_par, u_perp, n_perp, n, Y):
     return Sn_bar
 
 
-def eps_a_int(phi, w, wce, n, n_perp, n_par):
-    Y = wce / w
-    A2 = 1 - n_par**2  # n_par < 1 so A^2 > 0
-    R = np.sqrt(np.abs(n**2 * Y**2 - A2) / A2)
-    A = np.sqrt(A2)
-    u_perp = R * np.sin(phi)
-    u_par = n_par * n * Y / (1 - n_par**2) + (R / A) * np.cos(phi)
+def get_U_bar(v, theta, f, n, Y, n_par, u_perp, u_par):
+    """Normalized U as defined by Smirnov and Harvey."""
     gamma = np.sqrt(1 + u_perp**2 + u_par**2)
-    dfdu_perp, dfdu_par = m_e * c * gradf(phi)
-    U_bar = 1 / gamma * (n * wce / w * dfdu_perp + n_par * u_perp * dfdu_par)
-    Sn_bar = hermitian_Sn_bar(u_par, u_perp, n_perp, n, Y)
+    u = v / c
+    dfdu, dfdtheta = np.gradient(f, u, theta)
+    dfdu_perp = dfdu * np.cos(theta) - dfdtheta / u * np.sin(theta)
+    dfdu_par = dfdu * np.sin(theta) + dfdtheta / u * np.cos(theta)
 
-    # differential of u3 over dphi
-    d3udphi = 2 * np.pi * R * np.sin(phi) * R**2 / A
-    integrand = d3udphi * U_bar * Sn_bar
-    return integrand
+    xi_u = np.sqrt(u_perp**2 + u_par**2)
+    xi_theta = np.arctan2(u_perp, u_par)
+    dfdu_perp = interpn((u, theta), dfdu_perp, (xi_u, xi_theta), bounds_error=False,
+                        fill_value=0)
+    dfdu_par = interpn((u, theta), dfdu_par, (xi_u, xi_theta), bounds_error=False,
+                       fill_value=0)
+
+    U_bar = 1 / gamma * (n * Y * dfdu_perp + n_par * u_perp * dfdu_par)
+    return U_bar
 
 
-def eps_a_n(n, w, wce, n_perp, n_par):
-    """
-    Calculates the integral of the spectral energy density over the
-    angle phi. This is used to calculate the absorption coefficient.
+def integral_n(n, w, wce, n_perp, n_par, v, theta, f, tensor='eps_a'):
+    """Calculates the integral to sum for both coefficients.
+
+    This integral may be one of two, each specified within equations (6)
+    and (7) in [1]. The implementation largely follows the notation in
+    [2], with u being the normalized momentum (p/mc).
 
     Parameters
     ----------
     n : scalar
-        Refractive index.
+        Harmonic number.
     w : scalar
         Wave frequency (rad/s).
     wce : scalar
@@ -329,13 +331,52 @@ def eps_a_n(n, w, wce, n_perp, n_par):
         Perpendicular refractive index.
     n_par : scalar
         Parallel refractive index.
+    v : ndarray
+        Momentum per mass coordinate (from CQL3D).
+    theta : ndarray
+        Angle from magnetic field coordinate (from CQL3D). This should
+        extend from 0 to pi.
+    f : ndarray
+        Relativistic Maxwellian on the polar grid (normalized).
+    tensor : str, optional
+        Type of tensor to be calculated. Options are 'eps_a' or 'G'.
 
     Returns
     -------
-    complex ndarray
-        Integral of the spectral energy density.
+    integral : complex ndarray
+        The integral needed to calculate the specified tensor.
+
+    Raises
+    ------
+    ValueError
+        If the tensor type is not recognized.
+
+    References
+    ----------
+    [1] R. W. Harvey *et al.*, Phys. Fluids B **5**, 446 (1993).
+
+    [2] A. P. Smirnov and R. W. Harvey, The GENRAY Ray Tracing Code,
+    CompX (2003), https://compxco.com/Genray_manual.pdf.
     """
-    integral, _ = quad(
-        eps_a_int, 0, np.pi, args=(w, wce, n, n_perp, n_par), points=(0, np.pi)
-    )
+    Y = wce / w
+    A2 = 1 - n_par**2  # n_par < 1 so A^2 > 0
+    R = np.sqrt(np.abs(n**2 * Y**2 - A2) / A2)
+    A = np.sqrt(A2)
+    a0 = n_par * n * Y / (1 - n_par**2)
+    u_perp = R * np.sin(theta)
+    u_par = a0 + (R / A) * np.cos(theta)
+
+    Sn_bar = get_Sn_bar(u_par, u_perp, n_perp, n, Y)
+    if tensor == 'eps_a':
+        U_bar = get_U_bar(v, theta, f, n, Y, n_par, u_perp, u_par)
+        integrand = U_bar * Sn_bar
+    elif tensor == 'G':
+        # TODO
+        return
+    else:
+        raise ValueError("Tensor must be 'eps_a' or 'G'.")
+
+    jacobian = 2 * np.pi * R * np.sin(theta) * R**2 / A
+    integral = np.trapezoid(integrand * jacobian, theta, axis=0)
+
     return integral
