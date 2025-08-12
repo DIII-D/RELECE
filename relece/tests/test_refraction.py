@@ -1,4 +1,4 @@
-from relece.utils import refraction, refraction_coefs
+from relece.utils import refraction, dielectric_coefs
 import numpy as np
 
 
@@ -7,7 +7,7 @@ def _refraction(w, wpe, wce, x_mode=False):
     Calculates the refractive index for perpendicular propagation.
     """
     theta = np.pi / 2  # Perpendicular propagation
-    R, L, S, _, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    R, L, S, _, P = dielectric_coefs(w, wpe, wce)
     n = refraction(w, wpe, wce, theta, x_mode=x_mode)
     n2 = n**2
     if x_mode:

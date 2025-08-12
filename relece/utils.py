@@ -6,18 +6,18 @@ gyrating electrons. In devices like DIII-D, ECE is exploited to measure
 the temperature profile of the plasma.
 """
 import numpy as np
-from scipy import linalg
+from scipy.linalg import null_space
 from scipy.constants import c
 from scipy.special import jv, jvp
 from scipy.interpolate import interpn
 
 
-def refraction_coefs(w, wpe, wce, theta, eps_h=False, nu=1e-6):
-    """
-    Return coefficients needed to determine refraction index. Note that
-    an infinitesimally small collision term is added to the wave
-    frequency to account for Stix's causality prescription and handle
-    singularities.
+def dielectric_coefs(w, wpe, wce, nu=1e-6):
+    """Calculate the Stix coefficients for the dielectric tensor.
+
+    To account for singularities at the positive or negative cyclotron
+    frequency, an infinitesimally small collision term is added to the
+    wave frequency.
     """
     w = w + 1j * nu
     P = 1 - wpe**2 / w**2
@@ -25,13 +25,17 @@ def refraction_coefs(w, wpe, wce, theta, eps_h=False, nu=1e-6):
     L = 1 - wpe**2 / (w * (w + wce))
     S = (R + L) / 2
     D = (R - L) / 2
-    if eps_h:
-        return R, L, S, D, P
+    return R, L, S, D, P
+
+
+def refraction_coefs(w, wpe, wce, theta, nu=1e-6):
+    """Return coefficients used to determine refraction index."""
+    R, L, S, D, P = dielectric_coefs(w, wpe, wce, nu)
     A = S * np.sin(theta)**2 + P * np.cos(theta)**2
     B = R * L * np.sin(theta)**2 + P * S * (1 + np.cos(theta)**2)
     F2 = (R*L - P*S)**2 * np.sin(theta)**4 + 4 * P**2 * D**2 * np.cos(theta)**2
     F = np.sqrt(F2)
-    return A, B, F
+    return A, B, F, R, L, S, D, P
 
 
 def refraction(w, wpe, wce, theta, x_mode=False):
@@ -68,7 +72,7 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    A, B, F = refraction_coefs(w, wpe, wce, theta)
+    A, B, F, *_ = refraction_coefs(w, wpe, wce, theta)
     n2_plus = (B + F) / (2 * A)
     n2_minus = (B - F) / (2 * A)
 
@@ -135,7 +139,7 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
            absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
            1153-1257.
     """
-    _, _, S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    *_, S, D, P = dielectric_coefs(w, wpe, wce)
     n = refraction(w, wpe, wce, theta, x_mode)
     n2 = n**2
     n_perp = n * np.sin(theta)
@@ -188,7 +192,7 @@ def polarization(Lambda, k, w):
     .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    E = linalg.null_space(Lambda, rcond=1e-15)
+    E = null_space(Lambda, rcond=1e-15)
     if np.shape(E)[1] > 1:
         raise ValueError("Dispersion tensor must have nullity 1.")
 
@@ -217,7 +221,7 @@ def cold_plasma_eps_h(w, wpe, wce, theta):
     complex ndarray
         Cold plasma Hermitian dielectric tensor.
     """
-    _, _, S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    *_, S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
 
     eps00 = S
     eps01 = -1j * D

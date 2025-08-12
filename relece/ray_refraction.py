@@ -17,8 +17,7 @@ def _nr_coefs(w, wpe, wce, theta):
     Calculates the coefficients A, B, and F in the Appleton-Hartree
     equation for the refractive index.
     """
-    R, L, S, _, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
-    A, B, _ = refraction_coefs(w, wpe, wce, theta)
+    A, B, _, R, L, S, _, P = refraction_coefs(w, wpe, wce, theta)
     Ap = (S - P) * np.sin(2*theta)
     Bp = (R*L - P*S) * np.sin(2*theta)
     App = 2 * (S - P) * np.cos(2*theta)
