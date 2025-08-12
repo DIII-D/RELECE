@@ -7,7 +7,7 @@ the temperature profile of the plasma.
 """
 import numpy as np
 from scipy import linalg
-from scipy.constants import m_e, c
+from scipy.constants import c
 from scipy.special import jv, jvp
 from scipy.interpolate import interpn
 
@@ -269,9 +269,7 @@ def cold_plasma_dwepshdw(w, wpe, wce, eps_h):
 
 
 def get_Sn_bar(u_par, u_perp, n_perp, n, Y):
-    """This Sn_bar is a factor of 1/u_perp from that of Smirnov and
-    Harvey.
-    """
+    """A factor of 1/u_perp from that of Smirnov and Harvey."""
     b = np.abs(n_perp * u_perp / Y)
     Jn = jv(n, b)
     Jnp = jvp(n, b)
@@ -286,11 +284,19 @@ def get_Sn_bar(u_par, u_perp, n_perp, n, Y):
     Sn21 = np.conj(Sn12)
     Sn22 = u_par**2 / u_perp * Jn**2
 
-    Sn = np.array([[Sn00, Sn01, Sn02],
-                   [Sn10, Sn11, Sn12],
-                   [Sn20, Sn21, Sn22]])
-    Sn_bar = Sn / (m_e * c)
+    Sn_bar = np.array([[Sn00, Sn01, Sn02],
+                       [Sn10, Sn11, Sn12],
+                       [Sn20, Sn21, Sn22]])
     return Sn_bar
+
+
+def distpoints(u_perp, u_par, u, theta, f):
+    """Gets the interpolated points along the resonance ellipse."""
+    xi_u = np.hypot(u_perp, u_par)
+    xi_theta = np.arctan2(u_perp, u_par)
+    f_interp = interpn((u, theta), f, (xi_u, xi_theta), bounds_error=False,
+                       fill_value=0)
+    return f_interp
 
 
 def get_U_bar(v, theta, f, n, Y, n_par, u_perp, u_par):
@@ -301,12 +307,8 @@ def get_U_bar(v, theta, f, n, Y, n_par, u_perp, u_par):
     dfdu_perp = dfdu * np.cos(theta) - dfdtheta / u * np.sin(theta)
     dfdu_par = dfdu * np.sin(theta) + dfdtheta / u * np.cos(theta)
 
-    xi_u = np.sqrt(u_perp**2 + u_par**2)
-    xi_theta = np.arctan2(u_perp, u_par)
-    dfdu_perp = interpn((u, theta), dfdu_perp, (xi_u, xi_theta), bounds_error=False,
-                        fill_value=0)
-    dfdu_par = interpn((u, theta), dfdu_par, (xi_u, xi_theta), bounds_error=False,
-                       fill_value=0)
+    dfdu_perp = distpoints(u_perp, u_par, u, theta, dfdu_perp)
+    dfdu_par = distpoints(u_perp, u_par, u, theta, dfdu_par)
 
     U_bar = 1 / gamma * (n * Y * dfdu_perp + n_par * u_perp * dfdu_par)
     return U_bar
@@ -371,8 +373,9 @@ def integral_n(n, w, wce, n_perp, n_par, v, theta, f, tensor='eps_a'):
         U_bar = get_U_bar(v, theta, f, n, Y, n_par, u_perp, u_par)
         integrand = U_bar * Sn_bar
     elif tensor == 'G':
-        # TODO
-        return
+        f_interp = distpoints(u_perp, u_par, v, theta, f)
+        gamma = np.sqrt(1 + u_perp**2 + u_par**2)
+        integrand = f_interp * u_perp * Sn_bar / gamma
     else:
         raise ValueError("Tensor must be 'eps_a' or 'G'.")
 
