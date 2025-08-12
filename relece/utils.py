@@ -6,7 +6,6 @@ gyrating electrons. In devices like DIII-D, ECE is exploited to measure
 the temperature profile of the plasma.
 """
 import numpy as np
-from scipy.linalg import null_space
 from scipy.constants import c
 from scipy.special import jv, jvp
 from scipy.interpolate import interpn
@@ -162,11 +161,11 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
     return Lambda
 
 
-def polarization(Lambda, k, w):
-    """
-    Calculates the electric field (polarization) from the dispersion
-    tensor. Since the dispersion tensor depends on frequency, the
-    result is in the Fourier domain.
+def polarization(w, wpe, wce, theta, k, n):
+    """Calculates the field polarization.
+
+    The result is given in terms of the electric and magnetic fields,
+    normalized to the radial (x) component of the electric field.
 
     Parameters
     ----------
@@ -182,20 +181,16 @@ def polarization(Lambda, k, w):
     complex ndarray
         Electric and magnetic fields.
 
-    Raises
-    ------
-    ValueError
-        If the dispersion tensor does not have nullity 1.
-
     References
     ----------
     .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    E = null_space(Lambda, rcond=1e-15)
-    if np.shape(E)[1] > 1:
-        raise ValueError("Dispersion tensor must have nullity 1.")
-
+    *_, S, D, P = dielectric_coefs(w, wpe, wce)
+    Ex = 1
+    Ey = 1j * D / (n**2 - S)
+    Ez = -n**2 * np.cos(theta) * np.sin(theta) / (P - n**2 * np.sin(theta)**2)
+    E = np.array([Ex, Ey, Ez])
     B = c / w * np.cross(k, E)
 
     return E, B
