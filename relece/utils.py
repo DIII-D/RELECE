@@ -37,7 +37,7 @@ def refraction_coefs(w, wpe, wce, theta, nu=1e-6):
     return A, B, F, R, L, S, D, P
 
 
-def refraction(w, wpe, wce, theta, x_mode=False):
+def refraction(w, wpe, wce, theta, x_mode=False, nu=1e-6):
     """Calculates parallel and perpendicular refractive indices.
 
     This index depends on the wave mode and is calculated using the
@@ -71,7 +71,7 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    A, B, F, *_ = refraction_coefs(w, wpe, wce, theta)
+    A, B, F, *_ = refraction_coefs(w, wpe, wce, theta, nu)
     n2_plus = (B + F) / (2 * A)
     n2_minus = (B - F) / (2 * A)
 
@@ -103,7 +103,7 @@ def wavevector(n, w, theta):
     return np.array([kx, ky, kz])
 
 
-def dispersion(w, wpe, wce, theta, x_mode=False):
+def dispersion(w, wpe, wce, theta, x_mode=False, nu=1e-6):
     """
     Calculates the dispersion tensor for cold plasma.
 
@@ -124,6 +124,8 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
         Wave propagation angle.
     x_mode : bool
         Whether the X mode is selected.
+    nu : scalar, optional
+        Collision frequency for causality (rad/s). Default is 1e-6.
 
     Returns
     -------
@@ -138,8 +140,8 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
            absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
            1153-1257.
     """
-    *_, S, D, P = dielectric_coefs(w, wpe, wce)
-    n = refraction(w, wpe, wce, theta, x_mode)
+    *_, S, D, P = dielectric_coefs(w, wpe, wce, nu)
+    n = refraction(w, wpe, wce, theta, x_mode, nu)
     n2 = n**2
     n_perp = n * np.sin(theta)
     n_par = n * np.cos(theta)
@@ -161,7 +163,7 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
     return Lambda
 
 
-def polarization(w, wpe, wce, theta, k, n):
+def polarization(w, wpe, wce, theta, k, n, nu=1e-6):
     """Calculates the field polarization.
 
     The result is given in terms of the electric and magnetic fields,
@@ -186,7 +188,7 @@ def polarization(w, wpe, wce, theta, k, n):
     .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    *_, S, D, P = dielectric_coefs(w, wpe, wce)
+    *_, S, D, P = dielectric_coefs(w, wpe, wce, nu)
     Ex = 1
     Ey = 1j * D / (n**2 - S)
     Ez = -n**2 * np.cos(theta) * np.sin(theta) / (P - n**2 * np.sin(theta)**2)
@@ -196,9 +198,10 @@ def polarization(w, wpe, wce, theta, k, n):
     return E, B
 
 
-def cold_plasma_eps_h(w, wpe, wce, theta):
-    """
-    Calculates the cold plasma Hermitian dielectric tensor.
+def cold_plasma_eps_h(w, wpe, wce, theta, nu=1e-6):
+    """Calculates the cold plasma Hermitian dielectric tensor.
+
+    The toroidal magnetic field is assumed to lie along the z-axis.
 
     Parameters
     ----------
@@ -216,7 +219,7 @@ def cold_plasma_eps_h(w, wpe, wce, theta):
     complex ndarray
         Cold plasma Hermitian dielectric tensor.
     """
-    *_, S, D, P = refraction_coefs(w, wpe, wce, theta, eps_h=True)
+    *_, S, D, P = refraction_coefs(w, wpe, wce, theta, nu=nu)
 
     eps00 = S
     eps01 = -1j * D
@@ -234,8 +237,45 @@ def cold_plasma_eps_h(w, wpe, wce, theta):
     return eps_h
 
 
-def _refraction_derivs(w, wpe, wce):
+def group_velocity_magnitude(w, wpe, wce, n):
+    """Calculates the group velocity magnitude in a cold plasma.
+
+    This routine is given by equation (13) in [1], where mu is the
+    refractive index.
+
+    Parameters
+    ----------
+    w : scalar
+        Wave frequency (rad/s).
+    wpe : scalar
+        Plasma frequency (rad/s).
+    wce : scalar
+        Cyclotron frequency (rad/s).
+    n : scalar
+        Refractive index.
+
+    Returns
+    -------
+    vg : scalar
+        Group velocity magnitude (m/s).
+
+    References
+    ----------
+    .. [1] R. F. Mullaly, J. Atmos. Terr. Phys. **9**, 322 (1956).
+    """
+    X = (wpe / w)**2
+    Y = (wce / w)**2  # Squared from that of Mullaly
+    eta = 1 - X
+    lambda_ = 1 + X / (n**2 - 1)
+    num = X * lambda_ * (lambda_**2 - eta**2 * lambda_ - X * Y)
+    denom = eta * (lambda_ - 1)**2 * (lambda_**2 - 2 * eta * lambda_ + Y)
+    mup = np.sqrt((lambda_ - 1) / (lambda_ - eta)) * (1 - num / denom)
+    return c / mup
+
+
+def _refraction_derivs(w, wpe, wce, nu=1e-6):
     """Derivatives of refraction coefs with respect to w."""
+    w = w + 1j * nu
     dSdw = 2 * w * wpe**2 / (w**2 - wce**2)**2
     dDdw = wce * wpe**2 * (wce**2 - 3*w**2) / (w**2 * (wce**2 - w**2)**2)
     dPdw = 2 * wpe**2 / w**3
@@ -244,10 +284,7 @@ def _refraction_derivs(w, wpe, wce):
 
 
 def cold_plasma_dwepshdw(w, wpe, wce, eps_h):
-    """
-    Calculates the derivative of w times eps_h. This quantity is needed
-    in order to calculate the spectral energy density.
-    """
+    """Calculates the derivative of w times eps_h."""
     dSdw, dDdw, dPdw = _refraction_derivs(w, wpe, wce)
 
     deps00 = dSdw
@@ -265,6 +302,14 @@ def cold_plasma_dwepshdw(w, wpe, wce, eps_h):
                          [deps20, deps21, deps22]])
     dweps_hdw = eps_h + w * deps_hdw
     return dweps_hdw
+
+
+def spectral_energy_density(w, wpe, wce, eps_h, E, B):
+    """Equation (5) from Harvey et al. (1993)."""
+    dwepshdw = cold_plasma_dwepshdw(w, wpe, wce, eps_h)
+    B2 = np.vdot(B, B)
+    EwepsE = np.vdot(E, dwepshdw @ E)
+    return (B2 + EwepsE) / (8 * np.pi)
 
 
 def get_Sn_bar(u_par, u_perp, n_perp, n, Y):
