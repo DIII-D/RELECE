@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from fractions import Fraction
-from relece.utils import refraction
+from relece.cold_plasma import refraction
 from relece.ray_refraction import ray_refraction
 
 

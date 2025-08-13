@@ -1,6 +1,5 @@
 import numpy as np
-from relece.utils import refraction
-from relece.ray_refraction import ray_refraction
+from relece.cold_plasma import refraction, ray_refraction
 
 
 # --- Test Cases ---

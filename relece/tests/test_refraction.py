@@ -1,4 +1,4 @@
-from relece.utils import refraction, dielectric_coefs
+from relece.cold_plasma import refraction, dielectric_coefs
 import numpy as np
 
 

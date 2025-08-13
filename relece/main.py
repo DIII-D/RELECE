@@ -1,7 +1,7 @@
 import tomllib
 import numpy as np
 from scipy import constants
-from relece import utils
+from relece import cold_plasma
 
 with open("config/params.toml", "rb") as f:
     params = tomllib.load(f)
@@ -17,9 +17,9 @@ gamma_th = 1 / np.sqrt(1 - (v_th / constants.c)**2)  # thermal Lorentz factor
 wce = constants.e * params['Bt'] / (gamma_th * constants.m_e)
 wr = wce / 2 * (1 + np.sqrt(1 + 4 * wpe**2/wce**2))  # RH cutoff (rad/s)
 theta = eval(params['theta'])
-n = np.sqrt(utils.refraction(w, wpe, wce, theta, params['x_mode']))
+n = np.sqrt(cold_plasma.refraction(w, wpe, wce, theta, params['x_mode']))
 n_par = n * np.cos(theta)
 n_perp = n * np.sin(theta)
-k = utils.wavevector(n, w, theta)
+k = cold_plasma.wavevector(n, w, theta)
 k_par = k[2]
 k_perp = k[0]

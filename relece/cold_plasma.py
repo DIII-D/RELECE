@@ -1,14 +1,12 @@
-"""
-ECE signature modeling
+"""Calculates wave propagation quantities for cold plasma.
 
-Electron cyclotron emission (ECE) is the phenomenon of radiation from
-gyrating electrons. In devices like DIII-D, ECE is exploited to measure
-the temperature profile of the plasma.
+These include:
+- Hermitian dielectric tensor
+- (Ray) refractive index
+- Polarization
 """
 import numpy as np
 from scipy.constants import c
-from scipy.special import jv, jvp
-from scipy.interpolate import interpn
 
 
 def dielectric_coefs(w, wpe, wce, nu=1e-6):
@@ -264,17 +262,17 @@ def group_velocity_magnitude(w, wpe, wce, n):
     .. [1] R. F. Mullaly, J. Atmos. Terr. Phys. **9**, 322 (1956).
     """
     X = (wpe / w)**2
-    Y = (wce / w)**2  # Squared from that of Mullaly
+    Y = wce / w
     eta = 1 - X
     lambda_ = 1 + X / (n**2 - 1)
-    num = X * lambda_ * (lambda_**2 - eta**2 * lambda_ - X * Y)
-    denom = eta * (lambda_ - 1)**2 * (lambda_**2 - 2 * eta * lambda_ + Y)
-    mup = np.sqrt((lambda_ - 1) / (lambda_ - eta)) * (1 - num / denom)
+    p = X * lambda_ * (lambda_**2 - eta**2 * lambda_ - X * Y**2)
+    q = eta * (lambda_ - 1)**2 * (lambda_**2 - 2 * eta * lambda_ + Y**2)
+    mup = np.sqrt((lambda_ - 1) / (lambda_ - eta)) * (1 - p / q)
     return c / mup
 
 
 def _refraction_derivs(w, wpe, wce, nu=1e-6):
-    """Derivatives of refraction coefs with respect to w."""
+    """Derivatives of refraction coefs with respect to `w`."""
     w = w + 1j * nu
     dSdw = 2 * w * wpe**2 / (w**2 - wce**2)**2
     dDdw = wce * wpe**2 * (wce**2 - 3*w**2) / (w**2 * (wce**2 - w**2)**2)
@@ -283,8 +281,8 @@ def _refraction_derivs(w, wpe, wce, nu=1e-6):
     return dSdw, dDdw, dPdw
 
 
-def cold_plasma_dwepshdw(w, wpe, wce, eps_h):
-    """Calculates the derivative of w times eps_h."""
+def _dwepshdw(w, wpe, wce, eps_h):
+    """Calculates the derivative of `w` times `eps_h`."""
     dSdw, dDdw, dPdw = _refraction_derivs(w, wpe, wce)
 
     deps00 = dSdw
@@ -306,124 +304,92 @@ def cold_plasma_dwepshdw(w, wpe, wce, eps_h):
 
 def spectral_energy_density(w, wpe, wce, eps_h, E, B):
     """Equation (5) from Harvey et al. (1993)."""
-    dwepshdw = cold_plasma_dwepshdw(w, wpe, wce, eps_h)
+    dwepshdw = _dwepshdw(w, wpe, wce, eps_h)
     B2 = np.vdot(B, B)
     EwepsE = np.vdot(E, dwepshdw @ E)
     return (B2 + EwepsE) / (8 * np.pi)
 
 
-def get_Sn_bar(u_par, u_perp, n_perp, n, Y):
-    """A factor of 1/u_perp from that of Smirnov and Harvey."""
-    b = np.abs(n_perp * u_perp / Y)
-    Jn = jv(n, b)
-    Jnp = jvp(n, b)
-
-    Sn00 = u_perp * (n * Jn / b)**2
-    Sn01 = -1j * u_perp * (n * Jn * Jnp / b)
-    Sn02 = u_par * (n * Jn**2 / b)
-    Sn10 = np.conj(Sn01)
-    Sn11 = u_perp * Jnp**2
-    Sn12 = 1j * u_par * Jn * Jnp
-    Sn20 = np.conj(Sn02)
-    Sn21 = np.conj(Sn12)
-    Sn22 = u_par**2 / u_perp * Jn**2
-
-    Sn_bar = np.array([[Sn00, Sn01, Sn02],
-                       [Sn10, Sn11, Sn12],
-                       [Sn20, Sn21, Sn22]])
-    return Sn_bar
+def _nr_coefs(w, wpe, wce, theta):
+    """Calculates `A` and `B` as well as their `theta` derivatives."""
+    A, B, _, R, L, S, _, P = refraction_coefs(w, wpe, wce, theta)
+    Ap = (S - P) * np.sin(2*theta)
+    Bp = (R * L - P * S) * np.sin(2*theta)
+    App = 2 * (S - P) * np.cos(2*theta)
+    Bpp = 2 * (R * L - P * S) * np.cos(2*theta)
+    return A, B, Ap, Bp, App, Bpp
 
 
-def distpoints(u_perp, u_par, u, theta, f):
-    """Gets the interpolated points along the resonance ellipse."""
-    xi_u = np.hypot(u_perp, u_par)
-    xi_theta = np.arctan2(u_perp, u_par)
-    f_interp = interpn((u, theta), f, (xi_u, xi_theta), bounds_error=False,
-                       fill_value=0)
-    return f_interp
+def _dndtheta(n, A, B, Ap, Bp):
+    """Calculates the derivative of `n` with respect to `theta`."""
+    n2 = n**2
+    np1 = (n / 2) * (Bp - Ap * n2) / (2 * A * n2 - B)
+    return np1
 
 
-def get_U_bar(v, theta, f, n, Y, n_par, u_perp, u_par):
-    """Normalized U as defined by Smirnov and Harvey."""
-    gamma = np.sqrt(1 + u_perp**2 + u_par**2)
-    u = v / c
-    dfdu, dfdtheta = np.gradient(f, u, theta)
-    dfdu_perp = dfdu * np.cos(theta) - dfdtheta / u * np.sin(theta)
-    dfdu_par = dfdu * np.sin(theta) + dfdtheta / u * np.cos(theta)
-
-    dfdu_perp = distpoints(u_perp, u_par, u, theta, dfdu_perp)
-    dfdu_par = distpoints(u_perp, u_par, u, theta, dfdu_par)
-
-    U_bar = 1 / gamma * (n * Y * dfdu_perp + n_par * u_perp * dfdu_par)
-    return U_bar
+def _d2ndtheta2(n, np1, A, B, Ap, Bp, App, Bpp):
+    """Calculates the second derivative of `n`."""
+    p = (np1*n**2 * (3*Ap*B-2*A*Bp) - 2*A*Ap*np1*n**4 + n**3 * (App*B - 3*Ap*Bp
+                                                                + 2*A*Bpp)
+         + 2*n**5 * (Ap**2 - A*App) - B*Bp*np1 + n * (Bp**2 - B*Bpp))
+    q = 2 * (B - 2*A*n**2)**2
+    return p / q
 
 
-def integral_n(n, w, wce, n_perp, n_par, v, theta, f, tensor='eps_a'):
-    """Calculates the integral to sum for both coefficients.
+def _nr_xyz(n, np1, npp, theta):
+    """Calculates more important coefficients for `nr`."""
+    x = np1 / n
+    y = np.sqrt(1 + x**2)
+    xp = (npp - x) / n
+    yp = x * xp / y
+    z = (np.cos(theta) + x * np.sin(theta)) / y
+    zp = ((xp*np.sin(theta) + x*np.cos(theta) - np.sin(theta)) - yp / y * z
+          - (yp * (x*np.sin(theta) + np.cos(theta))) / y**2)
+    return y, zp
 
-    This integral may be one of two, each specified within equations (6)
-    and (7) in [1]. The implementation largely follows the notation in
-    [2], with u being the normalized momentum (p/mc).
+
+def ray_refraction(n, w, wpe, wce, theta, nu=1e-6):
+    """
+    Calculates the ray refractive index in a magnetized cold plasma as
+    defined in [1].
 
     Parameters
     ----------
     n : scalar
-        Harmonic number.
+        Magnetized cold plasma refractive index.
     w : scalar
         Wave frequency (rad/s).
+    wpe : scalar
+        Plasma frequency (rad/s).
     wce : scalar
         Cyclotron frequency (rad/s).
-    n_perp : scalar
-        Perpendicular refractive index.
-    n_par : scalar
-        Parallel refractive index.
-    v : ndarray
-        Momentum per mass coordinate (from CQL3D).
-    theta : ndarray
-        Angle from magnetic field coordinate (from CQL3D). This should
-        extend from 0 to pi.
-    f : ndarray
-        Relativistic Maxwellian on the polar grid (normalized).
-    tensor : str, optional
-        Type of tensor to be calculated. Options are 'eps_a' or 'G'.
+    theta : scalar
+        Wave propagation angle.
+    eps_h : complex ndarray
+        Cold plasma permittivity tensor.
 
     Returns
     -------
-    integral : complex ndarray
-        The integral needed to calculate the specified tensor.
-
-    Raises
-    ------
-    ValueError
-        If the tensor type is not recognized.
+    scalar : nr
+        Ray refractive index.
 
     References
     ----------
-    [1] R. W. Harvey *et al.*, Phys. Fluids B **5**, 446 (1993).
-
-    [2] A. P. Smirnov and R. W. Harvey, The GENRAY Ray Tracing Code,
-    CompX (2003), https://compxco.com/Genray_manual.pdf.
+    .. [1] G. Bekefi, *Radiation Processes in Plasmas* (Wiley, New York,
+           1966).
+    .. [2] T. H. Stix, *Waves in Plasmas* (AIP Press, Melville, NY,
+           1992).
     """
-    Y = wce / w
-    A2 = 1 - n_par**2  # n_par < 1 so A^2 > 0
-    R = np.sqrt(np.abs(n**2 * Y**2 - A2) / A2)
-    A = np.sqrt(A2)
-    a0 = n_par * n * Y / (1 - n_par**2)
-    u_perp = R * np.sin(theta)
-    u_par = a0 + (R / A) * np.cos(theta)
+    A, B, Ap, Bp, App, Bpp = _nr_coefs(w, wpe, wce, theta)
+    n2 = n**2
+    F = 2 * A * n2 - B
+    degenerate_mask = np.isclose(F, 0)
+    if np.isclose(F.all(), 0):
+        return n  # If F is zero, the modes are degenerate
+    np1 = _dndtheta(n, A, B, Ap, Bp)
+    npp = _d2ndtheta2(n, np1, A, B, Ap, Bp, App, Bpp)
+    y, zp = _nr_xyz(n, np1, npp, theta)
 
-    Sn_bar = get_Sn_bar(u_par, u_perp, n_perp, n, Y)
-    if tensor == 'eps_a':
-        U_bar = get_U_bar(v, theta, f, n, Y, n_par, u_perp, u_par)
-        integrand = U_bar * Sn_bar
-    elif tensor == 'G':
-        f_interp = distpoints(u_perp, u_par, v, theta, f)
-        gamma = np.sqrt(1 + u_perp**2 + u_par**2)
-        integrand = f_interp * u_perp * Sn_bar / gamma
-    else:
-        raise ValueError("Tensor must be 'eps_a' or 'G'.")
-
-    jacobian = 2 * np.pi * R * np.sin(theta) * R**2 / A
-    integral = np.trapezoid(integrand * jacobian, theta, axis=0)
-
-    return integral
+    nr2 = np.abs(n2 * np.sin(theta) * y / zp)
+    nr2 = np.where(degenerate_mask, n2, nr2)  # Handle degenerate case
+    return np.sqrt(nr2)
