@@ -103,10 +103,9 @@ def integral_n(n, w, wpe, wce, n_perp, n_par, v, theta, f, tensor):
 
     References
     ----------
-    [1] R. W. Harvey *et al.*, Phys. Fluids B **5**, 446 (1993).
-
-    [2] A. P. Smirnov and R. W. Harvey, The GENRAY Ray Tracing Code,
-    CompX (2003), https://compxco.com/Genray_manual.pdf.
+    .. [1] R. W. Harvey *et al.*, Phys. Fluids B **5**, 446 (1993).
+    .. [2] A. P. Smirnov and R. W. Harvey, The GENRAY Ray Tracing Code,
+           CompX (2003), https://compxco.com/Genray_manual.pdf.
     """
     X = (wpe / w)**2
     Y = wce / w
@@ -147,3 +146,20 @@ def j_n(n, w, wpe, wce, n_perp, n_par, nr, v, theta, f, E, S):
     G = integral_n(n, w, wpe, wce, n_perp, n_par, v, theta, f, tensor='G')
     j_n = np.pi * nr**2 * (w / c)**2 * np.vdot(E, G @ E) / S
     return j_n
+
+
+def sum_harmonics(cn, initial, tolerance=1e-6, *args):
+    """Sums over all harmonics within `tolerance`.
+
+    The function starts at `n = initial` and sums outward from there.
+    """
+    c = 0
+    cnext = cn(initial, *args)
+    n = 1
+    while np.abs(cnext) > tolerance:
+        c += cnext
+        cnext = cn(initial + n, *args)
+        n *= -1
+        if n > 0:
+            n += 1
+    return c

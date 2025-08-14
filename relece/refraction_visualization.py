@@ -1,8 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from fractions import Fraction
-from relece.cold_plasma import refraction
-from relece.ray_refraction import ray_refraction
+from relece.cold_plasma import refraction, ray_refraction
 
 
 def produce_refraction_data(theta, w, alpha2, beta2, ray=False):
@@ -37,8 +36,8 @@ def produce_refraction_data(theta, w, alpha2, beta2, ray=False):
     nx = refraction(w, wpe, wce, theta, x_mode=True)
 
     if ray:
-        ro = 1 / ray_refraction(no, w, wpe, wce, theta)
-        rx = 1 / ray_refraction(nx, w, wpe, wce, theta)
+        ro = 1 / ray_refraction(w, wpe, wce, theta, x_mode=False)
+        rx = 1 / ray_refraction(w, wpe, wce, theta, x_mode=True)
     else:
         ro = 1 / no
         rx = 1 / nx
@@ -56,7 +55,7 @@ w = 1.0  # Relative frequency for demonstration
 # Define 8 pairs of (alpha2, beta2) parameters for the 8 subplots
 # These values are chosen to show a variety of shapes.
 # params = [
-#     (1/3, 3/4), (4/9, 1), (2/3, 3/2), (1, 9/4-1e-3)
+#     (1/3, 3/4), (4/9, 1), (2/3, 3/2), (1, 9/4)
 # ]
 params = [
     (2/9, 1/2), (1/4, 9/16), (4/15, 3/5), (4/13, 9/13)
@@ -71,8 +70,9 @@ for i, ax in enumerate(axes_flat):
     alpha2, beta2 = params[i]
 
     ro, rx = produce_refraction_data(theta, w, alpha2, beta2, ray=True)
+    print(rx)
     ax.plot(theta, ro, label='O mode', color='b')
-    # ax.plot(theta, rx, label='X mode', color='r', linestyle='--')
+    ax.plot(theta, rx, label='X mode', color='r', linestyle='--')
 
     ax.set_title(
         f'$\\alpha^2={str(Fraction(alpha2).limit_denominator())}$; '
@@ -81,7 +81,7 @@ for i, ax in enumerate(axes_flat):
         pad=15
     )
     ax.set_theta_offset(np.pi / 2)
-    ax.set_rticks([1])
+    # ax.set_rticks([1])
     # ax.set_rlim(0, 1.5)
     ax.grid(True)
 

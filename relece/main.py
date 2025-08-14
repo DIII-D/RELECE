@@ -20,6 +20,3 @@ theta = eval(params['theta'])
 n = np.sqrt(cold_plasma.refraction(w, wpe, wce, theta, params['x_mode']))
 n_par = n * np.cos(theta)
 n_perp = n * np.sin(theta)
-k = cold_plasma.wavevector(n, w, theta)
-k_par = k[2]
-k_perp = k[0]

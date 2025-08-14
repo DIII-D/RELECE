@@ -7,16 +7,17 @@ These include:
 """
 import numpy as np
 from scipy.constants import c
+from scipy.differentiate import derivative
 
 
 def dielectric_coefs(w, wpe, wce, nu=1e-6):
     """Calculate the Stix coefficients for the dielectric tensor.
 
     To account for singularities at the positive or negative cyclotron
-    frequency, an infinitesimally small collision term is added to the
-    wave frequency.
+    frequency or 0, an infinitesimally small causality term is added to
+    the wave frequency.
     """
-    w = w + 1j * nu
+    w += np.where(w == 0 or np.abs(w) == np.abs(wce), 1j * nu, 0)
     P = 1 - wpe**2 / w**2
     R = 1 - wpe**2 / (w * (w - wce))
     L = 1 - wpe**2 / (w * (w + wce))
@@ -25,17 +26,17 @@ def dielectric_coefs(w, wpe, wce, nu=1e-6):
     return R, L, S, D, P
 
 
-def refraction_coefs(w, wpe, wce, theta, nu=1e-6):
+def refraction_coefs(w, wpe, wce, theta):
     """Return coefficients used to determine refraction index."""
-    R, L, S, D, P = dielectric_coefs(w, wpe, wce, nu)
+    R, L, S, D, P = dielectric_coefs(w, wpe, wce)
     A = S * np.sin(theta)**2 + P * np.cos(theta)**2
     B = R * L * np.sin(theta)**2 + P * S * (1 + np.cos(theta)**2)
-    F2 = (R*L - P*S)**2 * np.sin(theta)**4 + 4 * P**2 * D**2 * np.cos(theta)**2
+    F2 = (R * L - P * S)**2 * np.sin(theta)**4 + 4 * P**2 * D**2 * np.cos(theta)**2
     F = np.sqrt(F2)
     return A, B, F, R, L, S, D, P
 
 
-def refraction(w, wpe, wce, theta, x_mode=False, nu=1e-6):
+def refraction(w, wpe, wce, theta, x_mode=False):
     """Calculates parallel and perpendicular refractive indices.
 
     This index depends on the wave mode and is calculated using the
@@ -69,7 +70,7 @@ def refraction(w, wpe, wce, theta, x_mode=False, nu=1e-6):
     .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    A, B, F, *_ = refraction_coefs(w, wpe, wce, theta, nu)
+    A, B, F, *_ = refraction_coefs(w, wpe, wce, theta)
     n2_plus = (B + F) / (2 * A)
     n2_minus = (B - F) / (2 * A)
 
@@ -85,23 +86,12 @@ def refraction(w, wpe, wce, theta, x_mode=False, nu=1e-6):
         n2 = n2_X
     else:
         n2 = n2_O
-    return np.sqrt(n2)
+
+    n = np.sqrt(np.real(n2).astype(np.complex128))
+    return n
 
 
-def wavevector(n, w, theta):
-    """Calculates the wave vector from the refraction index.
-
-    The wave is assumed to propagate in the x-z plane, with the
-    magnetic field along the z-axis.
-    """
-    k = n * w / c
-    kx = k * np.sin(theta)
-    ky = 0
-    kz = k * np.cos(theta)
-    return np.array([kx, ky, kz])
-
-
-def dispersion(w, wpe, wce, theta, x_mode=False, nu=1e-6):
+def dispersion(w, wpe, wce, theta, x_mode=False):
     """
     Calculates the dispersion tensor for cold plasma.
 
@@ -122,8 +112,6 @@ def dispersion(w, wpe, wce, theta, x_mode=False, nu=1e-6):
         Wave propagation angle.
     x_mode : bool
         Whether the X mode is selected.
-    nu : scalar, optional
-        Collision frequency for causality (rad/s). Default is 1e-6.
 
     Returns
     -------
@@ -138,8 +126,8 @@ def dispersion(w, wpe, wce, theta, x_mode=False, nu=1e-6):
            absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
            1153-1257.
     """
-    *_, S, D, P = dielectric_coefs(w, wpe, wce, nu)
-    n = refraction(w, wpe, wce, theta, x_mode, nu)
+    *_, S, D, P = dielectric_coefs(w, wpe, wce)
+    n = refraction(w, wpe, wce, theta, x_mode)
     n2 = n**2
     n_perp = n * np.sin(theta)
     n_par = n * np.cos(theta)
@@ -161,7 +149,7 @@ def dispersion(w, wpe, wce, theta, x_mode=False, nu=1e-6):
     return Lambda
 
 
-def polarization(w, wpe, wce, theta, k, n, nu=1e-6):
+def polarization(w, wpe, wce, theta, k, n):
     """Calculates the field polarization.
 
     The result is given in terms of the electric and magnetic fields,
@@ -186,17 +174,17 @@ def polarization(w, wpe, wce, theta, k, n, nu=1e-6):
     .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
            McGraw-Hill, New York.
     """
-    *_, S, D, P = dielectric_coefs(w, wpe, wce, nu)
+    *_, S, D, P = dielectric_coefs(w, wpe, wce)
     Ex = 1
     Ey = 1j * D / (n**2 - S)
     Ez = -n**2 * np.cos(theta) * np.sin(theta) / (P - n**2 * np.sin(theta)**2)
     E = np.array([Ex, Ey, Ez])
-    B = c / w * np.cross(k, E)
+    B = n * np.cross([np.sin(theta), 0, np.cos(theta)], E)
 
     return E, B
 
 
-def cold_plasma_eps_h(w, wpe, wce, theta, nu=1e-6):
+def cold_plasma_eps_h(w, wpe, wce, theta):
     """Calculates the cold plasma Hermitian dielectric tensor.
 
     The toroidal magnetic field is assumed to lie along the z-axis.
@@ -217,7 +205,7 @@ def cold_plasma_eps_h(w, wpe, wce, theta, nu=1e-6):
     complex ndarray
         Cold plasma Hermitian dielectric tensor.
     """
-    *_, S, D, P = refraction_coefs(w, wpe, wce, theta, nu=nu)
+    *_, S, D, P = refraction_coefs(w, wpe, wce, theta)
 
     eps00 = S
     eps01 = -1j * D
@@ -310,86 +298,113 @@ def spectral_energy_density(w, wpe, wce, eps_h, E, B):
     return (B2 + EwepsE) / (8 * np.pi)
 
 
-def _nr_coefs(w, wpe, wce, theta):
-    """Calculates `A` and `B` as well as their `theta` derivatives."""
-    A, B, _, R, L, S, _, P = refraction_coefs(w, wpe, wce, theta)
-    Ap = (S - P) * np.sin(2*theta)
-    Bp = (R * L - P * S) * np.sin(2*theta)
-    App = 2 * (S - P) * np.cos(2*theta)
-    Bpp = 2 * (R * L - P * S) * np.cos(2*theta)
-    return A, B, Ap, Bp, App, Bpp
+# def _nr_coefs(w, wpe, wce, theta):
+#     """Calculates `A` and `B` as well as their `theta` derivatives."""
+#     A, B, _, R, L, S, _, P = refraction_coefs(w, wpe, wce, theta)
+#     Ap = (S - P) * np.sin(2*theta)
+#     Bp = (R * L - P * S) * np.sin(2*theta)
+#     App = 2 * (S - P) * np.cos(2*theta)
+#     Bpp = 2 * (R * L - P * S) * np.cos(2*theta)
+#     return A, B, Ap, Bp, App, Bpp
 
 
-def _dndtheta(n, A, B, Ap, Bp):
-    """Calculates the derivative of `n` with respect to `theta`."""
-    n2 = n**2
-    np1 = (n / 2) * (Bp - Ap * n2) / (2 * A * n2 - B)
-    return np1
+# def _dndtheta(n, A, B, Ap, Bp):
+#     """Calculates the derivative of `n` with respect to `theta`."""
+#     n2 = n**2
+#     np1 = (n / 2) * (Bp - Ap * n2) / (2 * A * n2 - B)
+#     return np1
 
 
-def _d2ndtheta2(n, np1, A, B, Ap, Bp, App, Bpp):
-    """Calculates the second derivative of `n`."""
-    p = (np1*n**2 * (3*Ap*B-2*A*Bp) - 2*A*Ap*np1*n**4 + n**3 * (App*B - 3*Ap*Bp
-                                                                + 2*A*Bpp)
-         + 2*n**5 * (Ap**2 - A*App) - B*Bp*np1 + n * (Bp**2 - B*Bpp))
-    q = 2 * (B - 2*A*n**2)**2
-    return p / q
+# def _d2ndtheta2(n, np1, A, B, Ap, Bp, App, Bpp):
+#     """Calculates the second derivative of `n`."""
+#     p = (np1*n**2 * (3*Ap*B-2*A*Bp) - 2*A*Ap*np1*n**4 + n**3 * (App*B - 3*Ap*Bp
+#                                                                 + 2*A*Bpp)
+#          + 2*n**5 * (Ap**2 - A*App) - B*Bp*np1 + n * (Bp**2 - B*Bpp))
+#     q = 2 * (B - 2*A*n**2)**2
+#     return p / q
 
 
-def _nr_xyz(n, np1, npp, theta):
-    """Calculates more important coefficients for `nr`."""
-    x = np1 / n
-    y = np.sqrt(1 + x**2)
-    xp = (npp - x) / n
-    yp = x * xp / y
-    z = (np.cos(theta) + x * np.sin(theta)) / y
-    zp = ((xp*np.sin(theta) + x*np.cos(theta) - np.sin(theta)) - yp / y * z
-          - (yp * (x*np.sin(theta) + np.cos(theta))) / y**2)
-    return y, zp
+# def _nr_xyz(n, np1, npp, theta):
+#     """Calculates more important coefficients for `nr`."""
+#     x = np1 / n
+#     y = np.sqrt(1 + x**2)
+#     xp = (npp - x) / n
+#     yp = x * xp / y
+#     z = (np.cos(theta) + x * np.sin(theta)) / y
+#     zp = ((xp*np.sin(theta) + x*np.cos(theta) - np.sin(theta)) - yp / y * z
+#           - (yp * (x*np.sin(theta) + np.cos(theta))) / y**2)
+#     return y, zp
 
 
-def ray_refraction(n, w, wpe, wce, theta, nu=1e-6):
-    """
-    Calculates the ray refractive index in a magnetized cold plasma as
-    defined in [1].
+# def ray_refraction(n, w, wpe, wce, theta, nu=1e-6):
+#     """
+#     Calculates the ray refractive index in a magnetized cold plasma as
+#     defined in [1].
 
-    Parameters
-    ----------
-    n : scalar
-        Magnetized cold plasma refractive index.
-    w : scalar
-        Wave frequency (rad/s).
-    wpe : scalar
-        Plasma frequency (rad/s).
-    wce : scalar
-        Cyclotron frequency (rad/s).
-    theta : scalar
-        Wave propagation angle.
-    eps_h : complex ndarray
-        Cold plasma permittivity tensor.
+#     Parameters
+#     ----------
+#     n : scalar
+#         Magnetized cold plasma refractive index.
+#     w : scalar
+#         Wave frequency (rad/s).
+#     wpe : scalar
+#         Plasma frequency (rad/s).
+#     wce : scalar
+#         Cyclotron frequency (rad/s).
+#     theta : scalar
+#         Wave propagation angle.
+#     eps_h : complex ndarray
+#         Cold plasma permittivity tensor.
 
-    Returns
-    -------
-    scalar : nr
-        Ray refractive index.
+#     Returns
+#     -------
+#     scalar : nr
+#         Ray refractive index.
 
-    References
-    ----------
-    .. [1] G. Bekefi, *Radiation Processes in Plasmas* (Wiley, New York,
-           1966).
-    .. [2] T. H. Stix, *Waves in Plasmas* (AIP Press, Melville, NY,
-           1992).
-    """
-    A, B, Ap, Bp, App, Bpp = _nr_coefs(w, wpe, wce, theta)
-    n2 = n**2
-    F = 2 * A * n2 - B
-    degenerate_mask = np.isclose(F, 0)
-    if np.isclose(F.all(), 0):
-        return n  # If F is zero, the modes are degenerate
-    np1 = _dndtheta(n, A, B, Ap, Bp)
-    npp = _d2ndtheta2(n, np1, A, B, Ap, Bp, App, Bpp)
-    y, zp = _nr_xyz(n, np1, npp, theta)
+#     References
+#     ----------
+#     .. [1] G. Bekefi, *Radiation Processes in Plasmas* (Wiley, New York,
+#            1966).
+#     .. [2] T. H. Stix, *Waves in Plasmas* (AIP Press, Melville, NY,
+#            1992).
+#     """
+#     A, B, Ap, Bp, App, Bpp = _nr_coefs(w, wpe, wce, theta)
+#     n2 = n**2
+#     # F = 2 * A * n2 - B
+#     # degenerate_mask = np.isclose(F, 0)
+#     # if np.isclose(F.all(), 0):
+#     #     return n  # If F is zero, the modes are degenerate
+#     np1 = _dndtheta(n, A, B, Ap, Bp)
+#     npp = _d2ndtheta2(n, np1, A, B, Ap, Bp, App, Bpp)
+#     y, zp = _nr_xyz(n, np1, npp, theta)
 
-    nr2 = np.abs(n2 * np.sin(theta) * y / zp)
-    nr2 = np.where(degenerate_mask, n2, nr2)  # Handle degenerate case
+#     nr2 = np.abs(n2 * np.sin(theta) * y / zp)
+#     # nr2 = np.where(degenerate_mask, n2, nr2)  # Handle degenerate case
+#     return np.sqrt(nr2)
+
+
+def _Z(theta, w, wpe, wce, x_mode):
+    n = refraction(w, wpe, wce, theta, x_mode=x_mode)
+    dndtheta = derivative(
+        lambda theta: refraction(w, wpe, wce, theta, x_mode=x_mode),
+        theta
+    ).df
+    Z = (np.cos(theta) + dndtheta / n * np.sin(theta)) / np.sqrt(1 + (dndtheta / n)**2)
+    return Z
+
+
+def ray_refraction(w, wpe, wce, theta, x_mode=False):
+    n = refraction(w, wpe, wce, theta, x_mode=x_mode)
+    dndtheta = derivative(
+        lambda t: refraction(w, wpe, wce, t, x_mode=x_mode),
+        theta
+    ).df
+    dZdtheta = derivative(
+        # _Z,
+        # theta,
+        # args=(w, wpe, wce, x_mode)
+        lambda t: _Z(t, w, wpe, wce, x_mode),
+        theta
+    ).df
+    nr2 = np.abs(n**2 * np.sin(theta) * np.sqrt(1 + (dndtheta / n)**2) / dZdtheta)
     return np.sqrt(nr2)
