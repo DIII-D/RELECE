@@ -1,4 +1,4 @@
-from relece.cold_plasma import refraction, dielectric_coefs
+from relece.cold_plasma import refraction
 import numpy as np
 
 
@@ -7,13 +7,14 @@ def _refraction(w, wpe, wce, x_mode=False):
     Calculates the refractive index for perpendicular propagation.
     """
     theta = np.pi / 2  # Perpendicular propagation
-    R, L, S, _, P = dielectric_coefs(w, wpe, wce)
     n = refraction(w, wpe, wce, theta, x_mode=x_mode)
     n2 = n**2
     if x_mode:
-        n2_expected = (R * L) / S
+        p = (w**2 - wpe**2)**2 - w**2 * wce**2
+        q = w**2 * (w**2 - wpe**2) - w**2 * wce**2
+        n2_expected = p / q
     else:
-        n2_expected = P
+        n2_expected = 1 - wpe**2 / w**2
 
     return n2, n2_expected
 

@@ -32,8 +32,8 @@ def produce_refraction_data(theta, w, alpha2, beta2, ray=False):
     wpe = np.sqrt(alpha2) * w
     wce = np.sqrt(beta2) * w
 
-    no = refraction(w, wpe, wce, theta, x_mode=False)
-    nx = refraction(w, wpe, wce, theta, x_mode=True)
+    no = np.real(refraction(w, wpe, wce, theta, x_mode=False))
+    nx = np.real(refraction(w, wpe, wce, theta, x_mode=True))
 
     if ray:
         ro = 1 / ray_refraction(w, wpe, wce, theta, x_mode=False)
@@ -48,29 +48,28 @@ def produce_refraction_data(theta, w, alpha2, beta2, ray=False):
 """
 Creates a figure with 8 subplots, each containing two polar plots.
 """
-theta = np.linspace(0, 2 * np.pi, 501,
+theta = np.linspace(0, 2 * np.pi, 1001,
                     endpoint=False)[1:]  # Avoid singularities at 0
 w = 1.0  # Relative frequency for demonstration
 
 # Define 8 pairs of (alpha2, beta2) parameters for the 8 subplots
 # These values are chosen to show a variety of shapes.
-# params = [
-#     (1/3, 3/4), (4/9, 1), (2/3, 3/2), (1, 9/4)
-# ]
 params = [
-    (2/9, 1/2), (1/4, 9/16), (4/15, 3/5), (4/13, 9/13)
+    (4/3, 3), (4, 9), (8, 18), (1, 9/4)
 ]
+# params = [
+#    (2/9, 1/2), (1/4, 9/16), (4/15, 3/5), (4/13, 9/13)
+# ]
 
 # Create a figure and a 1x4 grid of subplots.
-fig, axes = plt.subplots(1, 4, figsize=(
-    16, 4), subplot_kw={'projection': 'polar'})
+fig, axes = plt.subplots(1, 4, figsize=(16, 4), subplot_kw={'projection': 'polar'})
 axes_flat = axes.ravel()
 
 for i, ax in enumerate(axes_flat):
     alpha2, beta2 = params[i]
 
     ro, rx = produce_refraction_data(theta, w, alpha2, beta2, ray=True)
-    print(rx)
+    print(alpha2, beta2, rx)
     ax.plot(theta, ro, label='O mode', color='b')
     ax.plot(theta, rx, label='X mode', color='r', linestyle='--')
 

@@ -18,9 +18,9 @@ def dielectric_coefs(w, wpe, wce, nu=1e-6):
     the wave frequency.
     """
     w += np.where(w == 0 or np.abs(w) == np.abs(wce), 1j * nu, 0)
-    P = 1 - wpe**2 / w**2
-    R = 1 - wpe**2 / (w * (w - wce))
-    L = 1 - wpe**2 / (w * (w + wce))
+    P = np.real(1 - wpe**2 / w**2)
+    R = np.real(1 - wpe**2 / (w * (w - wce)))
+    L = np.real(1 - wpe**2 / (w * (w + wce)))
     S = (R + L) / 2
     D = (R - L) / 2
     return R, L, S, D, P
@@ -47,6 +47,10 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     root is the O mode and the "minus" root is the X mode, and vice-
     versa for the opposite case.
 
+    It is important to note that cold plasma dispersion is invalid near
+    the fundamental cyclotron frequency, where a thermal dispersion
+    relation is more appropriate [2]_.
+
     Parameters
     ----------
     w : scalar
@@ -65,30 +69,53 @@ def refraction(w, wpe, wce, theta, x_mode=False):
     n : scalar
         Refractive index.
 
+    Raises
+    ------
+    RuntimeWarning
+        Avoid cold plasma dispersion near the fundamental cyclotron
+        frequency.
+
     References
     ----------
-    .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
-           McGraw-Hill, New York.
+    .. [1] T. H. Stix, *Waves in Plasmas* (AIP Press, Melville, NY,
+           1992).
+    .. [2] H. Weitzner and D. B. Batchelor, Phys. Fluids **23**, 1359
+           (1980).
+
     """
-    A, B, F, *_ = refraction_coefs(w, wpe, wce, theta)
-    n2_plus = (B + F) / (2 * A)
-    n2_minus = (B - F) / (2 * A)
+    # if np.any(np.isclose(w, wce) or np.isclose(w, -wce)):
+    #     raise RuntimeWarning(
+    #         "Cold plasma approximation may be invalid near the "
+    #         "fundamental cyclotron frequency."
+    #     )
+    # A, B, F, *_ = refraction_coefs(w, wpe, wce, theta)
+    # n2_plus = (B + F) / (2 * A)
+    # n2_minus = (B - F) / (2 * A)
 
-    # Select the wpe cutoff for the O mode
-    if w > wce:
-        n2_O = n2_plus
-        n2_X = n2_minus
-    else:
-        n2_O = n2_minus
-        n2_X = n2_plus
+    # # Select the wpe cutoff for the O mode
+    # if w > wce:
+    #     n2_O = n2_plus
+    #     n2_X = n2_minus
+    # else:
+    #     n2_O = n2_minus
+    #     n2_X = n2_plus
 
+    # if x_mode:
+    #     n2 = n2_X
+    # else:
+    #     n2 = n2_O
+    # n2 = np.real(n2).astype(np.complex128)
+
+    # n = np.sqrt(n2)
+    # return n
+    delta = np.sqrt(wce**2 * np.sin(theta)**4 + 4 * (w**2 - wpe**2)**2
+                    * np.cos(theta)**2 / w**2)
     if x_mode:
-        n2 = n2_X
-    else:
-        n2 = n2_O
-
-    n = np.sqrt(np.real(n2).astype(np.complex128))
-    return n
+        delta *= -1
+    p = 2 * wpe**2 * (w**2 - wpe**2) / w**2
+    q = 2 * (w**2 - wpe**2) - wce**2 * np.sin(theta)**2 + wce * delta
+    n2 = 1 - p / q
+    return np.sqrt(n2)
 
 
 def dispersion(w, wpe, wce, theta, x_mode=False):
@@ -120,11 +147,10 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
 
     References
     ----------
-    .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
-           McGraw-Hill, New York.
-    .. [2] Bornatici, M., et al, 1983, "Electron cyclotron emission and
-           absorption in fusion plasmas," *Nucl. Fusion*, 23(9),
-           1153-1257.
+    .. [1] T. H. Stix, *Waves in Plasmas* (AIP Press, Melville, NY,
+           1992).
+    .. [2] M. Bornatici *et al.*, Nucl. Fusion **23**, 1153 (1983).
+
     """
     *_, S, D, P = dielectric_coefs(w, wpe, wce)
     n = refraction(w, wpe, wce, theta, x_mode)
@@ -171,8 +197,9 @@ def polarization(w, wpe, wce, theta, k, n):
 
     References
     ----------
-    .. [1] Stix, T. H., 1962, *The Theory of Plasma Waves*,
-           McGraw-Hill, New York.
+    .. [1] T. H. Stix, *Waves in Plasmas* (AIP Press, Melville, NY,
+           1992).
+
     """
     *_, S, D, P = dielectric_coefs(w, wpe, wce)
     Ex = 1
@@ -204,6 +231,12 @@ def cold_plasma_eps_h(w, wpe, wce, theta):
     -------
     complex ndarray
         Cold plasma Hermitian dielectric tensor.
+
+    References
+    ----------
+    .. [1] T. H. Stix, *Waves in Plasmas* (AIP Press, Melville, NY,
+           1992).
+
     """
     *_, S, D, P = refraction_coefs(w, wpe, wce, theta)
 
@@ -226,7 +259,7 @@ def cold_plasma_eps_h(w, wpe, wce, theta):
 def group_velocity_magnitude(w, wpe, wce, n):
     """Calculates the group velocity magnitude in a cold plasma.
 
-    This routine is given by equation (13) in [1], where mu is the
+    This routine is given by equation (13) in [1]_, where mu is the
     refractive index.
 
     Parameters
@@ -248,6 +281,7 @@ def group_velocity_magnitude(w, wpe, wce, n):
     References
     ----------
     .. [1] R. F. Mullaly, J. Atmos. Terr. Phys. **9**, 322 (1956).
+
     """
     X = (wpe / w)**2
     Y = wce / w
@@ -383,10 +417,10 @@ def spectral_energy_density(w, wpe, wce, eps_h, E, B):
 #     return np.sqrt(nr2)
 
 
-def _Z(theta, w, wpe, wce, x_mode):
-    n = refraction(w, wpe, wce, theta, x_mode=x_mode)
+def _Z(w, wpe, wce, theta, x_mode):
+    n = np.real(refraction(w, wpe, wce, theta, x_mode=x_mode))
     dndtheta = derivative(
-        lambda theta: refraction(w, wpe, wce, theta, x_mode=x_mode),
+        lambda theta: np.real(refraction(w, wpe, wce, theta, x_mode=x_mode)),
         theta
     ).df
     Z = (np.cos(theta) + dndtheta / n * np.sin(theta)) / np.sqrt(1 + (dndtheta / n)**2)
@@ -394,17 +428,14 @@ def _Z(theta, w, wpe, wce, x_mode):
 
 
 def ray_refraction(w, wpe, wce, theta, x_mode=False):
-    n = refraction(w, wpe, wce, theta, x_mode=x_mode)
+    n = np.real(refraction(w, wpe, wce, theta, x_mode=x_mode))
     dndtheta = derivative(
-        lambda t: refraction(w, wpe, wce, t, x_mode=x_mode),
+        lambda t: np.real(refraction(w, wpe, wce, t, x_mode=x_mode)),
         theta
     ).df
     dZdtheta = derivative(
-        # _Z,
-        # theta,
-        # args=(w, wpe, wce, x_mode)
-        lambda t: _Z(t, w, wpe, wce, x_mode),
+        lambda t: _Z(w, wpe, wce, t, x_mode),
         theta
     ).df
-    nr2 = np.abs(n**2 * np.sin(theta) * np.sqrt(1 + (dndtheta / n)**2) / dZdtheta)
+    nr2 = n * np.abs(np.sin(theta) * np.sqrt(1 + (dndtheta / n)**2) / dZdtheta)
     return np.sqrt(nr2)
