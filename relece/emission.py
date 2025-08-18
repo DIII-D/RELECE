@@ -32,9 +32,10 @@ def get_Sn_bar(u_par, u_perp, n_perp, n, Y):
     Sn21 = np.conj(Sn12)
     Sn22 = u_par**2 / u_perp * Jn**2
 
-    Sn_bar = np.array([[Sn00, Sn01, Sn02],
-                       [Sn10, Sn11, Sn12],
-                       [Sn20, Sn21, Sn22]])
+    Sn_bar = np.array([
+        [Sn00, Sn01, Sn02],
+        [Sn10, Sn11, Sn12],
+        [Sn20, Sn21, Sn22]])
     return Sn_bar
 
 

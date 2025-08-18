@@ -114,8 +114,8 @@ def refraction(w, wpe, wce, theta, x_mode=False):
         delta *= -1
     p = 2 * wpe**2 * (w**2 - wpe**2) / w**2
     q = 2 * (w**2 - wpe**2) - wce**2 * np.sin(theta)**2 + wce * delta
-    n2 = 1 - p / q
-    return np.sqrt(n2)
+    n2 = np.where(np.isclose(q, 0), np.inf, 1 - p / q)  # n = inf at resonance
+    return np.sqrt(np.complex128(n2))
 
 
 def dispersion(w, wpe, wce, theta, x_mode=False):
@@ -175,7 +175,7 @@ def dispersion(w, wpe, wce, theta, x_mode=False):
     return Lambda
 
 
-def polarization(w, wpe, wce, theta, k, n):
+def polarization(w, wpe, wce, theta, n):
     """Calculates the field polarization.
 
     The result is given in terms of the electric and magnetic fields,
@@ -238,7 +238,7 @@ def cold_plasma_eps_h(w, wpe, wce, theta):
            1992).
 
     """
-    *_, S, D, P = refraction_coefs(w, wpe, wce, theta)
+    *_, S, D, P = dielectric_coefs(w, wpe, wce, theta)
 
     eps00 = S
     eps01 = -1j * D
@@ -295,7 +295,7 @@ def group_velocity_magnitude(w, wpe, wce, n):
 
 def _refraction_derivs(w, wpe, wce, nu=1e-6):
     """Derivatives of refraction coefs with respect to `w`."""
-    w = w + 1j * nu
+    w += np.where(w == 0 or np.abs(w) == np.abs(wce), 1j * nu, 0)
     dSdw = 2 * w * wpe**2 / (w**2 - wce**2)**2
     dDdw = wce * wpe**2 * (wce**2 - 3*w**2) / (w**2 * (wce**2 - w**2)**2)
     dPdw = 2 * wpe**2 / w**3
@@ -437,5 +437,6 @@ def ray_refraction(w, wpe, wce, theta, x_mode=False):
         lambda t: _Z(w, wpe, wce, t, x_mode),
         theta
     ).df
-    nr2 = n * np.abs(np.sin(theta) * np.sqrt(1 + (dndtheta / n)**2) / dZdtheta)
+    nr2 = np.where(np.isclose(n, 0), 0, n * np.abs(np.sin(theta)
+                   * np.sqrt(1 + (dndtheta / n)**2) / dZdtheta))
     return np.sqrt(nr2)
