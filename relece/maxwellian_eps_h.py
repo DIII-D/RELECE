@@ -1,56 +1,6 @@
 import numpy as np
-from scipy.constants import c, m_e, e
+from scipy.constants import c, m_e
 from scipy.special import kv
-
-
-def _relativistic_maxwellian(v, Te):
-    """Calculate the amplitude of the relativistic Maxwellian
-    distribution at momentum per mass v.
-    """
-    Tnorm = Te * e / (m_e * c**2)
-    gamma = np.sqrt(1 + (v / c)**2)
-    normalization = 1 / (4 * np.pi * (m_e * c)**3 * Tnorm * kv(2, 1/Tnorm))
-
-    f = normalization * np.exp(-gamma / Tnorm)
-    return f
-
-
-def relativistic_maxwellian_distribution(Te, jx=300, iy=200, enorm=200):
-    """Generates the relativistic Maxwellian distribution.
-
-    This function imitates the output of CQL3D, i.e., its output is
-    discretized over a polar grid in normalized momentum space
-    (momentum / rest mass).
-
-    Parameters
-    ----------
-    Te : scalar
-        Electron temperature (eV).
-    jx : scalar
-        Momentum grid resolution.
-    iy : scalar
-        Angular grid resolution.
-    enorm : scalar
-        Maximum particle energy (keV).
-
-    Returns
-    -------
-    v : ndarray
-        Momentum per mass coordinate.
-    theta : ndarray
-        Angle from magnetic field coordinate.
-    f : ndarray
-        Relativistic maxwellian on the polar grid.
-    """
-    enorm *= e * 1e3  # Convert keV to J
-    gammanorm = 1 + enorm / (m_e * c**2)
-    vnorm = c * np.sqrt(gammanorm**2 - 1)
-    v = np.linspace(0, vnorm, num=jx)
-    theta = np.linspace(0, np.pi, num=iy)
-
-    f_1D = _relativistic_maxwellian(v, Te)
-    f = np.tile(f_1D, (iy, 1)).T
-    return v, theta, f
 
 
 def _get_eps_h_coefs(w, wpe, wce, n_par, Te):

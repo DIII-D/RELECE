@@ -5,9 +5,14 @@ authors = [
     {name = "Isaac Goodman", email="isaacdg@stanford.edu"},
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">= 3.12"
 license = "MIT"
 license-files = ["LICENSE"]
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+]
 
 [build-system]
 requires = ["hatchling"]

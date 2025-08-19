@@ -6,11 +6,16 @@ as cold plasmas.
 
 """
 from abc import ABC, abstractmethod
+from typing import override
+
 import numpy as np
 from scipy import constants
 from scipy.differentiate import derivative
+from scipy.linalg import null_space
 
-# Convert SI units to CGS for plasma calculations
+from . import distribution
+
+# Convert SI units to Gaussian for plasma calculations
 c = constants.speed_of_light * 1e2  # m/s to cm/s
 e = constants.elementary_charge * c / 10  # C to statC
 m_e = constants.electron_mass * 1e3  # kg to g
@@ -24,37 +29,41 @@ class Plasma(ABC):
     serves as a base for specific plasma types.
 
     """
-    def __init__(self, density, magnetic_field, collision_rate):
-        """
-        Initialize the cold plasma with density and magnetic field.
 
-        Parameters
-        ----------
-        density : scalar
-            Plasma density (1/cm^3).
-        magnetic_field : scalar
-            Magnetic field strength (G).
-        collision_rate : scalar, optional
-            Collision rate (1/s). Default is 1e-3 (nearly collisionless).
-
-        """
-        self.density = density
-        self.magnetic_field = magnetic_field
+    def __init__(
+        self,
+        density,
+        magnetic_field,
+        temperature=0,
+        distribution=None,
+        collision_rate=1e-3
+    ):
+        self.density = density * 1e6  # Convert to 1/cm^3
+        self.magnetic_field = magnetic_field * 1e4  # Convert to G
+        self.temperature = temperature
+        if distribution is None:
+            distribution = distribution.MaxwellJuttnerDistribution(temperature)
         self.collision_rate = collision_rate
         self.wpe = self._get_plasma_frequency()
         self.wce = self._get_cyclotron_frequency()
 
-
     def _get_plasma_frequency(self):
-        """Calculate the plasma frequency (radian/s)."""
-        return np.sqrt(4 * np.pi * self.density * e**2 / m_e)
-
+        gamma_thermal = self._get_gamma_thermal()
+        wpe = np.sqrt(4 * np.pi * self.density * e**2 / gamma_thermal * m_e)
+        return wpe
 
     def _get_cyclotron_frequency(self):
-        """Calculate the cyclotron frequency (radian/s)."""
-        return e * self.magnetic_field / (m_e * c)
+        gamma_thermal = self._get_gamma_thermal()
+        wce = e * self.magnetic_field / (gamma_thermal * m_e * c)
+        return wce
 
+    def _get_gamma_thermal(self):
+        """Calculate the thermal Lorentz factor."""
+        v_thermal = np.sqrt(self.temperature * e * 1e7 / m_e)
+        gamma_thermal = 1 / np.sqrt(1 - (v_thermal / c)**2)
+        return gamma_thermal
 
+    @abstractmethod
     def refractive_index(self, frequency, mode='O', angle=np.pi/2):
         """
         Calculate the refractive index for a given wave.
@@ -75,12 +84,147 @@ class Plasma(ABC):
             Refractive index.
 
         """
-        raise NotImplementedError("This method should be implemented in subclasses.")
+        pass
+
+    def ray_refractive_index(self, frequency, mode='O', angle=np.pi/2):
+        """
+        Calculates the ray refractive index for a given wave.
+
+        This quantity is defined from the real part of the refractive
+        index and is calculated numerically.
+
+        Parameters
+        ----------
+        frequency : scalar
+            Frequency of the wave (Hz).
+        mode : str, optional
+            Mode of propagation ('O' or 'X'). Default is 'O'.
+        angle : scalar, optional
+            Angle of propagation with respect to magnetic field
+            (rad). Default is pi/2.
+
+        Returns
+        -------
+        nr : scalar
+            Ray refractive index.
+
+        Raises
+        ------
+        RuntimeWarning
+            If the derivative calculation fails for one or more angles.
+
+        References
+        ----------
+        .. [1] G. Bekefi, *Radiation Processes in Plasmas* (Wiley, New York,
+           1966).
+
+        """
+        n = np.real(self.refractive_index(
+            frequency, distribution, mode, angle))
+        dn = derivative(
+            lambda theta: np.real(
+                self.refractive_index(frequency, distribution, mode, theta)),
+            angle
+        )
+        denominator = derivative(
+            lambda theta: self._ray_refraction_denom_helper(
+                frequency, mode, theta),
+            angle
+        )
+        if not np.any(dn.success) or not np.any(denominator.success):
+            self._raise_differentiation_warning()
+        numerator = np.sqrt(1 + (dn.df / n)**2)
+
+        nr2 = np.abs(n**2 * np.sin(angle) * numerator / denominator.df)
+        return np.sqrt(nr2)
+
+    def _ray_refraction_denom_helper(self, frequency, mode, angle):
+        """Important quantity for ray refractive index calculation"""
+        n = np.real(self.refractive_index(
+            frequency, mode, angle))
+        dn = derivative(
+            lambda theta: np.real(
+                self.refractive_index(frequency, mode, theta)),
+            angle
+        )
+        if np.any(not dn.success):
+            self._raise_differentiation_warning()
+
+        denom_helper = ((np.cos(angle) + (dn.df / n) * np.sin(angle))
+                        / np.sqrt(1 + (dn.df / n)**2))
+        return denom_helper
+
+    @staticmethod
+    def _raise_differentiation_warning():
+        raise RuntimeWarning(
+            "Derivative calculation failed for one or more angles."
+        )
+
+    def e_field_polarization(self, frequency, mode='O', angle=np.pi/2):
+        """Solve the wave equation for the electric field polarization"""
+        n = self.refractive_index(frequency, mode, angle)
+        epsilon = self.get_dielectric_tensor(frequency)
+        kk_minus_eye = np.array([
+            [-np.cos(angle)**2,               0,
+             np.cos(angle) * np.sin(angle)],
+            [0,                               -1,  0],
+            [np.cos(angle) * np.sin(angle),   0,   -np.sin(angle)**2]
+        ])  # Outer product of wave direction - delta_ij
+        dispersion_tensor = epsilon + n**2 * kk_minus_eye
+
+        e_polarization = null_space(dispersion_tensor)
+        return e_polarization
+
+    @abstractmethod
+    def get_dielectric_tensor(self, frequency):
+        """
+        Calculate the dielectric tensor for the plasma at a given
+        frequency.
+
+        Parameters
+        ----------
+        frequency : scalar
+            Frequency of the wave (Hz).
+
+        Returns
+        -------
+        epsilon : ndarray
+            Dielectric tensor (3x3 matrix).
+
+        """
+        pass
+
+    @abstractmethod
+    def get_spectral_energy_flux_density(self, frequency, mode='O', angle=np.pi/2):
+        """
+        Calculate the spectral energy flux density for a given wave.
+
+        Parameters
+        ----------
+        frequency : scalar
+            Frequency of the wave (Hz).
+        distribution : Distribution
+            Particle distribution function.
+        mode : str, optional
+            Mode of propagation ('O' or 'X'). Default is 'O'.
+        angle : scalar, optional
+            Angle of propagation with respect to magnetic field
+            (radians). Default is pi/2.
+
+        Returns
+        -------
+        S : scalar
+            Spectral energy flux density (J/m^2/s/Hz).
+
+        """
+        pass
 
 
 class ColdPlasma(Plasma):
     """
-    Magnetized cold electron plasma.
+    Magnetized cold electron plasma class. This is a good approximation
+    for ray tracing away from the fundamental harmonic and is much
+    computationally simpler.
 
     Attributes
     ----------
@@ -119,8 +263,26 @@ class ColdPlasma(Plasma):
     .. [3] R. F. Mullaly, J. Atmos. Terr. Phys. **9**, 322 (1956).
 
     """
-    def __init__(self, density, magnetic_field, collision_rate=1e-3):
-        super().__init__(density, magnetic_field, collision_rate)
+
+    def __init__(self, density, magnetic_field, distribution=None, collision_rate=1e-3):
+        """
+        Initialize a `Plasma` object with zero temperature.
+
+        Note that, although the distribution is a delta function in the
+        cold plasma limit, an arbitrary distribution is accepted since
+        the absorption and emission strengths are assumed to be
+        determined by the tail electrons in all cases.[1]_
+
+        .. [1] R. W. Harvey *et al.*, Phys. Fluids B **5**, 446 (1993).
+
+        """
+        super().__init__(
+            density,
+            magnetic_field,
+            distribution=distribution,
+            temperature=0,
+            collision_rate=collision_rate
+        )
 
     def refractive_index(self, frequency, mode='O', angle=np.pi/2):
         """
@@ -164,97 +326,33 @@ class ColdPlasma(Plasma):
                         * np.cos(angle)**2 / w**2)
         if mode == 'X':
             delta *= -1
-        n2 = 1 - ((2 * wpe2 * (w**2 - wpe2) / w**2)
-                  / (2 * (w**2 - wpe2) - wce2 * np.sin(angle)**2 + np.sqrt(wce2) * delta))
+        elif mode != 'O':
+            raise ValueError("Invalid mode. Choose 'O' or 'X'.")
+
+        n2_numerator = 2 * wpe2 * (w**2 - wpe2) / w**2
+        n2_denominator = (
+            2 * (w**2 - wpe2)
+            - wce2 * np.sin(angle)**2
+            + np.sqrt(wce2) * delta
+        )
+        n2 = 1 - (n2_numerator / n2_denominator)
         return np.sqrt(n2)
 
-    def ray_refractive_index(self, frequency, mode='O', angle=np.pi/2):
-        """
-        Calculates the ray refractive index for a given wave.
-
-        This quantity is defined from the real part of the refractive
-        index and is calculated numerically.
-
-        TODO: This quantity can be solved analytically for cold plasma.
-        A broken implementation exists here:
-
-            https://github.com/DIII-D/relativistic-ece/blob/ae7b395a3c0349987e1fc23e81ea6d42ac2d56c4/relece/cold_plasma.py#L313-L395
-
-        Parameters
-        ----------
-        frequency : scalar
-            Frequency of the wave (Hz).
-        mode : str, optional
-            Mode of propagation ('O' or 'X'). Default is 'O'.
-        angle : scalar, optional
-            Angle of propagation with respect to magnetic field
-            (rad). Default is pi/2.
-
-        Returns
-        -------
-        nr : scalar
-            Ray refractive index.
-
-        Raises
-        ------
-        RuntimeWarning
-            If the derivative calculation fails for one or more angles.
-
-        References
-        ----------
-        .. [1] G. Bekefi, *Radiation Processes in Plasmas* (Wiley, New York,
-           1966).
-
-        """
-        n = np.real(self.refractive_index(frequency, mode, angle))
-        dn = derivative(
-            lambda theta: np.real(self.refractive_index(frequency, mode, theta)),
-            angle
-        )
-        denominator = derivative(
-            lambda theta: self._ray_refraction_denom_helper(frequency, mode, theta),
-            angle
-        )
-        if not np.any(dn.success) or not np.any(denominator.success):
-            self._raise_differentiation_warning()
-        numerator = np.sqrt(1 + (dn.df / n)**2)
-
-        nr2 = np.abs(n**2 * np.sin(angle) * numerator / denominator.df)
-        return np.sqrt(nr2)
-
-
-    def _ray_refraction_denom_helper(self, frequency, mode, angle):
-        """Important quantity for ray refractive index calculation"""
-        n = np.real(self.refractive_index(frequency, mode, angle))
-        dn = derivative(
-            lambda theta: np.real(self.refractive_index(frequency, mode, theta)),
-            angle
-        )
-        if np.any(not dn.success):
-            self._raise_differentiation_warning()
-
-        denom_helper = ((np.cos(angle) + (dn.df / n) * np.sin(angle))
-                        / np.sqrt(1 + (dn.df / n)**2))
-        return denom_helper
-
-
-    @staticmethod
-    def _raise_differentiation_warning():
-        raise RuntimeWarning(
-            "Derivative calculation failed for one or more angles."
-        )
-
-
+    @override
     def e_field_polarization(self, frequency, mode='O', angle=np.pi/2):
         w = 2 * np.pi * frequency
         s, d, p = self._stix_coefficients(w)
         n = self.refractive_index(frequency, mode, angle)
         x_polarization = 1
         y_polarization = 1j * d / (n**2 - s)
-        z_polarization = n**2 * np.cos(angle) * np.sin(angle) / (n**2 * np.sin(angle)**2
-                                                                 - p)
-        return x_polarization, y_polarization, z_polarization
-
+        z_polarization = (
+            n**2 * np.cos(angle) * np.sin(angle)
+            / (n**2 * np.sin(angle)**2 - p)
+        )
+        e_polarization = np.array(
+            [x_polarization, y_polarization, z_polarization])
+        e_norm = e_polarization / np.linalg.norm(e_polarization)
+        return e_norm
 
     def _stix_coefficients(self, w):
         """
@@ -271,10 +369,10 @@ class ColdPlasma(Plasma):
                 "Frequency must be non-zero and not equal to the cyclotron frequency."
             )
         r = 1 - self.wpe**2 / (w * (w - self.wce))
-        l = 1 - self.wpe**2 / (w * (w + self.wce))
+        l_ = 1 - self.wpe**2 / (w * (w + self.wce))
 
-        s = (r + l) / 2
-        d = (r - l) / 2
+        s = (r + l_) / 2
+        d = (r - l_) / 2
         p = 1 - self.wpe**2 / w**2
         return s, d, p
 
@@ -300,39 +398,56 @@ class ColdPlasma(Plasma):
 
         """
         w = 2 * np.pi * frequency
-        vg_magnitude = self._get_vg_magnitude(w, mode, angle)
-        spectral_energy_density = self._get_spectral_energy_density(w, mode, angle)
+        n = self.refractive_index(frequency, mode, angle)
+        vg_magnitude = self._get_vg_magnitude(w, n)
+        spectral_energy_density = self._get_spectral_energy_density(
+            frequency, n, mode, angle
+        )
         return vg_magnitude * spectral_energy_density
 
-
-    def _get_vg_magnitude(self, w, mode, angle):
+    def _get_vg_magnitude(self, w, n):
         """
         Calculate the magnitude of the group velocity.
 
-        The symbols and equation come from Mullaly_'s derivation.
+        The symbols and equation come from Mullaly's derivation.[1]_
 
-        .. _Mullaly: R. F. Mullaly, J. Atmos. Terr. Phys. **9**, 322
+        .. [1] R. F. Mullaly, J. Atmos. Terr. Phys. **9**, 322
           (1956).
         """
         x = (self.wpe / w)**2
         y = self.wce / w
         eta = 1 - x
-        mu = self.refractive_index(w, mode, angle)
+        mu = n
         lambda_ = 1 + x / (mu**2 - 1)
         numerator = x * lambda_ * (lambda_**2 - eta**2 * lambda_ - x * y**2)
-        denominator = eta * (lambda_ - 1)**2 * (lambda_**2 - 2 * eta * lambda_ + y**2)
-        
-        mu_prime = np.sqrt((lambda_ - 1) / (lambda_ - eta)) * (1 + numerator
-                                                               / denominator)
+        denominator = (
+            eta * (lambda_ - 1)**2
+            * (lambda_**2 - 2 * eta * lambda_ + y**2)
+        )
+
+        mu_prime = (
+            np.sqrt((lambda_ - 1) / (lambda_ - eta))
+            * (1 + numerator / denominator)
+        )
         return c / mu_prime
 
+    def _get_spectral_energy_density(self, frequency, n, mode, angle):
+        w = 2 * np.pi * frequency
+        d_epsilon_h = self._get_dielectric_tensor_derivative(w)
+        d_w_epsilon_h = self.get_dielectric_tensor(frequency) + w * d_epsilon_h
+        k_hat = np.array([np.sin(angle), 0, np.cos(angle)])
+        e_polarization = self.e_field_polarization(frequency, mode, angle)
+        relative_b_field = n * np.cross(k_hat, e_polarization)
 
-    def _get_spectral_energy_density(self, w):
-        pass
-
+        spectral_energy_density = (
+            np.vdot(relative_b_field, relative_b_field)
+            + np.vdot(e_polarization, d_w_epsilon_h @ e_polarization)
+        ) / (8 * np.pi)
+        return spectral_energy_density
 
     def get_dielectric_tensor(self, frequency):
-        s, d, p = self._stix_coefficients(self.wpe)
+        w = 2 * np.pi * frequency
+        s, d, p = self._stix_coefficients(w)
         epsilon_h = np.array([
             [s,     -1j*d,  0],
             [1j*d,  s,      0],
@@ -340,7 +455,6 @@ class ColdPlasma(Plasma):
         ])
         return epsilon_h
 
-    
     def _get_dielectric_tensor_derivative(self, w):
         ds, dd, dp = self._get_stix_coefficient_derivatives(w)
         epsilon_h_derivative = np.array([
@@ -350,15 +464,9 @@ class ColdPlasma(Plasma):
         ])
         return epsilon_h_derivative
 
-
     def _get_stix_coefficient_derivatives(self, w):
         ds = 2 * w * self.wpe**2 / (w**2 - self.wce**2)**2
         dd = (self.wce * self.wpe**2 * (self.wce**2 - 3*w**2)
               / (w**2 * (self.wce**2 - w**2)**2))
         dp = 2 * self.wpe**2 / w**3
         return ds, dd, dp
-
-
-    def _get_spectral_energy_density(self, frequency, mode, angle):
-        pass
-
