@@ -26,10 +26,14 @@ class Distribution:
 
     """
 
-    def __init__(self, f, u, theta):
+    def __init__(self, f, u, theta, normalize=True, cql3d=True):
         self._validate_input(f, u, theta)
-        u /= c  # Convert momentum per mass to normalized momentum
-        self.f = self._normalize(f, u, theta)
+        if cql3d:
+            u /= c  # Convert momentum per mass to normalized momentum
+        if normalize:
+            self.f = self._normalize(f, u, theta)
+        else:
+            self.f = f
         self.u = u
         self.theta = theta
 
@@ -71,7 +75,7 @@ class MaxwellJuttnerDistribution(Distribution):
 
     def __init__(self, temperature, jx=300, iy=200, enorm=200):
         f, u, theta = self._define_distribution(temperature, jx, iy, enorm)
-        super().__init__(f, u, theta)
+        super().__init__(f, u, theta, normalize=False)
 
     @staticmethod
     def _relativistic_maxwellian(u, temperature):

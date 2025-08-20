@@ -12,8 +12,9 @@ import numpy as np
 from scipy import constants
 from scipy.differentiate import derivative
 from scipy.linalg import null_space
+from scipy.special import jv, jvp
 
-from . import distribution
+from . import distribution as dist
 
 # Convert SI units to Gaussian for plasma calculations
 c = constants.speed_of_light * 1e2  # m/s to cm/s
@@ -42,7 +43,7 @@ class Plasma(ABC):
         self.magnetic_field = magnetic_field * 1e4  # Convert to G
         self.temperature = temperature
         if distribution is None:
-            distribution = distribution.MaxwellJuttnerDistribution(temperature)
+            distribution = dist.MaxwellJuttnerDistribution(temperature)
         self.collision_rate = collision_rate
         self.wpe = self._get_plasma_frequency()
         self.wce = self._get_cyclotron_frequency()
@@ -119,11 +120,10 @@ class Plasma(ABC):
            1966).
 
         """
-        n = np.real(self.refractive_index(
-            frequency, distribution, mode, angle))
+        n = np.real(self.refractive_index(frequency, mode, angle))
         dn = derivative(
             lambda theta: np.real(
-                self.refractive_index(frequency, distribution, mode, theta)),
+                self.refractive_index(frequency, mode, theta)),
             angle
         )
         denominator = derivative(
@@ -218,6 +218,65 @@ class Plasma(ABC):
 
         """
         pass
+
+    @staticmethod
+    def _get_resonance_ellipse(n_par, y, phi, harmonic):
+        # Define convenient helper variables.
+        a2 = 1 - n_par**2
+        a = np.sqrt(a2)
+        r = np.sqrt(np.abs(harmonic**2 * y**2 - a2) / a2)
+        a0 = n_par * harmonic * y / (1 - n_par**2)
+
+        u_perp = r * np.sin(phi)
+        u_par = a0 + (r / a) * np.cos(phi)
+        return u_par, u_perp
+
+    @staticmethod
+    def _get_sn_bar_tensor(u_perp, u_par, y, n_perp, harmonic):
+        b = np.abs(n_perp * u_perp / y)
+        jn = jv(harmonic, b)
+        jnp = jvp(harmonic, b)
+
+        sn_xx = u_perp * (harmonic * jn / b)**2
+        sn_xy = -1j * u_perp * (harmonic * jn * jnp / b)
+        sn_xz = u_par * (harmonic * jn**2 / b)
+        sn_yx = np.conj(sn_xy)
+        sn_yy = u_perp * jnp**2
+        sn_yz = 1j * u_par * jn * jnp
+        sn_zx = np.conj(sn_xz)
+        sn_zy = np.conj(sn_yz)
+        sn_zz = u_par**2 / u_perp * jn**2
+
+        sn_bar = np.array([
+            [sn_xx, sn_xy, sn_xz],
+            [sn_yx, sn_yy, sn_yz],
+            [sn_zx, sn_zy, sn_zz]
+        ])
+        return sn_bar
+
+    @staticmethod
+    def _get_u_bar(distribution, u_perp, u_par, y, n_par, harmonic):
+        gamma = np.sqrt(1 + u_perp**2 + u_par**2)
+
+        f = distribution.f
+        u = distribution.u
+        theta = distribution.theta
+        dfdu, dfdtheta = np.gradient(f, u, theta)
+        dfdu_perp = dfdu * np.cos(theta) - dfdtheta / u * np.sin(theta)
+        dfdu_par = dfdu * np.sin(theta) + dfdtheta / u * np.cos(theta)
+
+        # Shift gradient to 1D array over resonance ellipse.
+        dperp_distribution = dist.Distribution(
+            dfdu_perp, u, theta, normalize=False, cql3d=False
+        )
+        dpar_distribution = dist.Distribution(
+            dfdu_par, u, theta, normalize=False, cql3d=False
+        )
+        dfdu_perp = dperp_distribution.ev(u_perp, u_par)
+        dfdu_par = dpar_distribution.ev(u_perp, u_par)
+
+        u_bar = (harmonic * y * dfdu_perp + n_par * u_perp * dfdu_par) / gamma
+        return u_bar
 
 
 class ColdPlasma(Plasma):
