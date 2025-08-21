@@ -1,8 +1,8 @@
 import numpy as np
-from scipy.constants import c, m_e, e
-from scipy.special import kv
-from scipy.interpolate import interpn
-from scipy.integrate import simpson
+from scipy import constants
+from scipy import special
+from scipy import interpolate
+from scipy import integrate
 
 
 class Distribution:
@@ -50,7 +50,7 @@ class Distribution:
     def __init__(self, f, u, theta, normalize=True, cql3d=True):
         self._validate_input(f, u, theta)
         if cql3d:
-            u /= c  # Convert momentum per mass to normalized momentum
+            u /= constants.c  # Convert momentum per mass to normalized momentum
         if normalize:
             self.f = self._normalize(f, u, theta)
         else:
@@ -69,14 +69,14 @@ class Distribution:
     def _normalize(f, u, theta):
         """`f` is integrated over 3D normalized momentum space."""
         jacobian = 2 * np.pi * u**2 * np.sin(theta)
-        integral = simpson(simpson(f * jacobian, u), theta)
+        integral = integrate.simpson(integrate.simpson(f * jacobian, u), theta)
         return f / integral
 
     def ev(self, u_perp, u_par):
         """Gets the interpolated points along the resonance ellipse."""
         xi_u = np.hypot(u_perp, u_par)
         xi_theta = np.arctan2(u_perp, u_par)
-        f_interp = interpn(
+        f_interp = interpolate.interpn(
             (self.u, self.theta),
             self.f,
             (xi_u, xi_theta),
@@ -116,14 +116,14 @@ class MaxwellJuttnerDistribution(Distribution):
         Calculate the amplitude of the Maxwell-Jüttner distribution
         at normalized momentum `u`.
         """
-        normalized_t = temperature * e / (m_e * c**2)
+        normalized_t = temperature * constants.e / (constants.m_e * constants.c**2)
         gamma = np.hypot(1, u)
-        normalization = 1 / (4 * np.pi * normalized_t * kv(2, 1 / normalized_t))
+        normalization = 1 / (4 * np.pi * normalized_t * special.kv(2, 1 / normalized_t))
         return normalization * np.exp(-gamma / normalized_t)
 
     def _define_distribution(self, temperature, jx, iy, enorm):
         """Define the Maxwell-Jüttner distribution."""
-        gammanorm = 1 + enorm * e * 1e3 / (m_e * c**2)
+        gammanorm = 1 + enorm * constants.e * 1e3 / (constants.m_e * constants.c**2)
         unorm = np.sqrt(gammanorm**2 - 1)
         u = np.linspace(0, unorm, jx)
         theta = np.linspace(0, np.pi, iy)

@@ -10,17 +10,17 @@ from typing import override
 
 import numpy as np
 from scipy import constants
-from scipy.differentiate import derivative
-from scipy.integrate import simpson
-from scipy.linalg import null_space
-from scipy.special import jv, jvp
+from scipy import differentiate
+from scipy import integrate
+from scipy import linalg
+from scipy import special
 
 from . import distribution as dist
 
 # Convert SI units to Gaussian for plasma calculations
-c = constants.speed_of_light * 1e2  # m/s to cm/s
+c = constants.centi * constants.speed_of_light  # m/s to cm/s
 e = constants.elementary_charge * c / 10  # C to statC
-m_e = constants.electron_mass * 1e3  # kg to g
+m_e = constants.electron_mass * constants.gram  # kg to g
 
 
 class Plasma(ABC):
@@ -123,12 +123,12 @@ class Plasma(ABC):
 
         """
         n = np.real(self.refractive_index(frequency, mode, angle))
-        dn = derivative(
+        dn = differentiate.derivative(
             lambda theta: np.real(
                 self.refractive_index(frequency, mode, theta)),
             angle
         )
-        denominator = derivative(
+        denominator = differentiate.derivative(
             lambda theta: self._ray_refraction_denom_helper(
                 frequency, mode, theta),
             angle
@@ -144,7 +144,7 @@ class Plasma(ABC):
         """Important quantity for ray refractive index calculation"""
         n = np.real(self.refractive_index(
             frequency, mode, angle))
-        dn = derivative(
+        dn = differentiate.derivative(
             lambda theta: np.real(
                 self.refractive_index(frequency, mode, theta)),
             angle
@@ -174,7 +174,7 @@ class Plasma(ABC):
         ])  # Outer product of wave direction - delta_ij
         dispersion_tensor = epsilon + n**2 * kk_minus_eye
 
-        e_polarization = null_space(dispersion_tensor)
+        e_polarization = linalg.null_space(dispersion_tensor)
         return e_polarization
 
     @abstractmethod
@@ -322,7 +322,7 @@ class Plasma(ABC):
             )
 
         jacobian = 2 * np.pi * r * np.sin(theta) * r**2 / a
-        integral_n = simpson(integrand * jacobian, theta)
+        integral_n = integrate.simpson(integrand * jacobian, theta)
         return integral_n
 
     @staticmethod
@@ -345,8 +345,8 @@ class Plasma(ABC):
         differing by a factor of ``1 / u_perp``.
         """
         b = np.abs(n_perp * u_perp / y)
-        jn = jv(harmonic, b)
-        jnp = jvp(harmonic, b)
+        jn = special.jv(harmonic, b)
+        jnp = special.jvp(harmonic, b)
 
         sn_xx = u_perp * (harmonic * jn / b)**2
         sn_xy = -1j * u_perp * (harmonic * jn * jnp / b)
