@@ -6,7 +6,8 @@ from scipy.integrate import simpson
 
 
 class Distribution:
-    """Base class for arbitrary electron momentum distributions.
+    """
+    Base class for arbitrary electron momentum distributions.
 
     This class is designed to accept arbitrary output from some radial
     coordinate in CQL3D. Therefore, it is expected that `u` will be
@@ -23,6 +24,26 @@ class Distribution:
         The normalized momentum per mass, defined as ``p / m_e``.
     theta : ndarray
         The polar angle in radians from 0 to pi.
+    normalize : bool
+        Whether to normalize the distribution function.
+    cql3d : bool
+        Whether to use the CQL3D coordinate system. Essentially, this
+        means `u` is assumed to be the normalized momentum as opposed
+        to the momentum per mass.
+
+    Attributes
+    ----------
+    f : ndarray
+        The distribution function.
+    u : ndarray
+        The normalized momentum per mass, defined as ``p / m_e``.
+    theta : ndarray
+        The polar angle in radians from 0 to pi.
+
+    Methods
+    -------
+    ev : float
+        Gets the interpolated points along the resonance ellipse.
 
     """
 
@@ -66,10 +87,22 @@ class Distribution:
 
 
 class MaxwellJuttnerDistribution(Distribution):
-    """Generate Maxwell-Juttner distribution.
+    """
+    Generate Maxwell-Juttner distribution.
 
     This is a `Distribution` subclass that generates a 2D polar
     distribution for relativistic thermal plasma.
+
+    Parameters
+    ----------
+    temperature : scalar
+        The temperature of the plasma (eV).
+    jx : int
+        The number of grid points in the momentum direction.
+    iy : int
+        The number of grid points in the polar angle direction.
+    enorm : float
+        The maximum energy on the momentum grid (keV).
 
     """
 
@@ -79,16 +112,14 @@ class MaxwellJuttnerDistribution(Distribution):
 
     @staticmethod
     def _relativistic_maxwellian(u, temperature):
-        """Calculate the amplitude of the Maxwell-Jüttner distribution
-        at normalized momentum `u`.
-
         """
-        # Note that theta is the traditional parameter used to define
-        # the distribution.
-        theta = temperature * e / (m_e * c**2)
+        Calculate the amplitude of the Maxwell-Jüttner distribution
+        at normalized momentum `u`.
+        """
+        normalized_t = temperature * e / (m_e * c**2)
         gamma = np.hypot(1, u)
-        normalization = 1 / (4 * np.pi * theta * kv(2, 1 / theta))
-        return normalization * np.exp(-gamma / theta)
+        normalization = 1 / (4 * np.pi * normalized_t * kv(2, 1 / normalized_t))
+        return normalization * np.exp(-gamma / normalized_t)
 
     def _define_distribution(self, temperature, jx, iy, enorm):
         """Define the Maxwell-Jüttner distribution."""

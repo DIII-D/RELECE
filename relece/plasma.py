@@ -36,7 +36,7 @@ class Plasma(ABC):
         self,
         density,
         magnetic_field,
-        temperature=0,
+        temperature=0.0,
         distribution=None,
         collision_rate=1e-3
     ):
@@ -393,8 +393,8 @@ class Plasma(ABC):
 class ColdPlasma(Plasma):
     """
     Magnetized cold electron plasma class. This is a good approximation
-    for ray tracing away from the fundamental harmonic and is much
-    computationally simpler.
+    for ray tracing away from the fundamental harmonic and is
+    computationally much simpler.
 
     Attributes
     ----------
@@ -433,26 +433,6 @@ class ColdPlasma(Plasma):
     .. [3] R. F. Mullaly, J. Atmos. Terr. Phys. **9**, 322 (1956).
 
     """
-
-    def __init__(self, density, magnetic_field, distribution=None, collision_rate=1e-3):
-        """
-        Initialize a `Plasma` object with zero temperature.
-
-        Note that, although the distribution is a delta function in the
-        cold plasma limit, an arbitrary distribution is accepted since
-        the absorption and emission strengths are assumed to be
-        determined by the tail electrons in all cases.[1]_
-
-        .. [1] R. W. Harvey *et al.*, Phys. Fluids B **5**, 446 (1993).
-
-        """
-        super().__init__(
-            density,
-            magnetic_field,
-            distribution=distribution,
-            temperature=0,
-            collision_rate=collision_rate
-        )
 
     def refractive_index(self, frequency, mode='O', angle=np.pi/2):
         """
@@ -546,7 +526,7 @@ class ColdPlasma(Plasma):
         p = 1 - self.wpe**2 / w**2
         return s, d, p
 
-    def get_spectral_energy_flux_density(self, frequency, mode='O', angle=np.pi/2):
+    def spectral_energy_flux_density(self, frequency, mode='O', angle=np.pi/2):
         """
         Calculate the energy flux density per frequency per unit volume
         `k` space.
