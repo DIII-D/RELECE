@@ -11,6 +11,7 @@ from typing import override
 import numpy as np
 from scipy import constants
 from scipy.differentiate import derivative
+from scipy.integrate import simpson
 from scipy.linalg import null_space
 from scipy.special import jv, jvp
 
@@ -44,6 +45,7 @@ class Plasma(ABC):
         self.temperature = temperature
         if distribution is None:
             distribution = dist.MaxwellJuttnerDistribution(temperature)
+        self.distribution = distribution
         self.collision_rate = collision_rate
         self.wpe = self._get_plasma_frequency()
         self.wce = self._get_cyclotron_frequency()
@@ -195,7 +197,7 @@ class Plasma(ABC):
         pass
 
     @abstractmethod
-    def get_spectral_energy_flux_density(self, frequency, mode='O', angle=np.pi/2):
+    def spectral_energy_flux_density(self, frequency, mode='O', angle=np.pi/2):
         """
         Calculate the spectral energy flux density for a given wave.
 
@@ -213,26 +215,135 @@ class Plasma(ABC):
 
         Returns
         -------
-        S : scalar
+        s : scalar
             Spectral energy flux density (J/m^2/s/Hz).
 
         """
         pass
 
+    def emission(
+        self,
+        frequency,
+        mode='O',
+        angle=np.pi/2,
+        tolerance=1e-6,
+        maxterms=10
+    ):
+        w, s, e, n, initial_harmonic = self._j_alpha_helper(frequency, mode, angle)
+        nr = self.ray_refractive_index(frequency, mode, angle)
+        j = self._sum_harmonics(
+            self._j_n,
+            initial_harmonic,
+            tolerance,
+            maxterms,
+            (mode, angle, n, nr, w, s, e)
+        )
+        return j
+
+    def absorption(
+        self,
+        frequency,
+        mode='O',
+        angle=np.pi/2,
+        tolerance=1e-6,
+        maxterms=10
+    ):
+        w, s, e, n, initial_harmonic = self._j_alpha_helper(frequency, mode, angle)
+        alpha = self._sum_harmonics(
+            self._alpha_n,
+            initial_harmonic,
+            tolerance,
+            maxterms,
+            (mode, angle, n, w, s, e)
+        )
+        return alpha
+
+    def _j_alpha_helper(self, frequency, mode, angle):
+        w = 2 * np.pi * frequency
+        s = self.spectral_energy_flux_density(frequency, mode, angle)
+        e = self.e_field_polarization(frequency, mode, angle)
+        n = self.refractive_index(frequency, mode, angle)
+        initial_harmonic = np.rint(2 * np.pi * frequency / self.wce)
+        return w, s, e, n, initial_harmonic
+
     @staticmethod
-    def _get_resonance_ellipse(n_par, y, phi, harmonic):
+    def _sum_harmonics(cn, initial, tolerance, maxterms, *args):
+        """Sums over all harmonics within `tolerance`.
+
+        The function starts at ``n = initial`` and sums outward from there.
+        """
+        c = 0
+        cnext = cn(initial, *args)
+        i = 1  # Principal harmonic offset
+        counter = 1
+
+        while np.all(np.abs(cnext) > tolerance) and counter < maxterms:
+            c += cnext
+            counter += 1
+            cnext = cn(initial + i, *args)
+            i *= -1
+            if i > 0:
+                i += 1
+
+        if counter == maxterms:
+            raise ValueError("Reached max terms without convergence.")
+        return c
+
+    def _alpha_n(self, harmonic, mode, angle, n, w, s, e):
+        epsilon_a = self._integral_n(w, angle, n, harmonic, 'epsilon_a')
+        alpha = w / (4 * np.pi) * np.vdot(e, epsilon_a @ e) / s
+        return alpha
+
+    def _j_n(self, harmonic, mode, angle, n, nr, w, s, e):
+        current_correlation_tensor = self._integral_n(
+            w, angle, n, harmonic, 'G'
+        )
+        j = np.pi * nr**2 * (w / c)**2 * np.vdot(e, current_correlation_tensor @ e) / s
+        return j
+
+    def _integral_n(self, w, angle, n, harmonic, tensor):
+        x = (self.wpe / w)**2
+        y = self.wce / w
+        n_perp = n * np.sin(angle)
+        n_par = n * np.cos(angle)
+        theta = self.distribution.theta
+        a, r, u_par, u_perp = self._get_resonance_ellipse(n_par, y, theta, harmonic)
+
+        sn_bar = self._get_sn_bar_tensor(u_perp, u_par, y, n_perp, harmonic)
+        if tensor == 'epsilon_a':
+            u_bar = self._get_u_bar(self.distribution, u_perp, u_par, y, n, harmonic)
+            integrand = -np.pi * x * (m_e * c)**3 * u_bar * sn_bar
+        else:
+            f = self.distribution.ev(u_perp, u_par)
+            gamma = np.sqrt(1 + u_perp**2 + u_par**2)
+            integrand = (
+                np.pi / (2 * np.pi)**5 * x / m_e * (m_e * c)**5
+                * f * u_perp * sn_bar / gamma
+            )
+
+        jacobian = 2 * np.pi * r * np.sin(theta) * r**2 / a
+        integral_n = simpson(integrand * jacobian, theta)
+        return integral_n
+
+    @staticmethod
+    def _get_resonance_ellipse(n_par, y, theta, harmonic):
+        """Defines the integration region imposed by the Dirac delta."""
         # Define convenient helper variables.
         a2 = 1 - n_par**2
         a = np.sqrt(a2)
         r = np.sqrt(np.abs(harmonic**2 * y**2 - a2) / a2)
         a0 = n_par * harmonic * y / (1 - n_par**2)
 
-        u_perp = r * np.sin(phi)
-        u_par = a0 + (r / a) * np.cos(phi)
-        return u_par, u_perp
+        u_perp = r * np.sin(theta)
+        u_par = a0 + (r / a) * np.cos(theta)
+        return a, r, u_par, u_perp
 
     @staticmethod
     def _get_sn_bar_tensor(u_perp, u_par, y, n_perp, harmonic):
+        """
+        :math:`\overline{S}_n` as defined by Smirnov and Harvey,
+        differing by a factor of ``1 / u_perp``.
+        """
         b = np.abs(n_perp * u_perp / y)
         jn = jv(harmonic, b)
         jnp = jvp(harmonic, b)
