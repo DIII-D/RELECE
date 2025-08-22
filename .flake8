@@ -1,5 +1,6 @@
 [flake8]
 per-file-ignores =
     __init__.py: F401
+    plasma_engine.py: W605
 ; This is for code only. Comments should be 72 columns max.
 max-line-length = 88

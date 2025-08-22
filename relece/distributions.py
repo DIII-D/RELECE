@@ -74,7 +74,7 @@ class Distribution:
 
     def ev(self, u_perp, u_par):
         """Gets the interpolated points along the resonance ellipse."""
-        xi_u = np.hypot(u_perp, u_par)
+        xi_u = np.sqrt(u_perp**2 + u_par**2)
         xi_theta = np.arctan2(u_perp, u_par)
         f_interp = interpolate.interpn(
             (self.u, self.theta),
@@ -101,7 +101,7 @@ class MaxwellJuttnerDistribution(Distribution):
         The number of grid points in the momentum direction.
     iy : int
         The number of grid points in the polar angle direction.
-    enorm : float
+    enorm : scalar
         The maximum energy on the momentum grid (keV).
 
     """
@@ -123,7 +123,7 @@ class MaxwellJuttnerDistribution(Distribution):
 
     def _define_distribution(self, temperature, jx, iy, enorm):
         """Define the Maxwell-Jüttner distribution."""
-        gammanorm = 1 + enorm * constants.e * 1e3 / (constants.m_e * constants.c**2)
+        gammanorm = 1 + 1e3 * enorm * constants.e / (constants.m_e * constants.c**2)
         unorm = np.sqrt(gammanorm**2 - 1)
         u = np.linspace(0, unorm, jx)
         theta = np.linspace(0, np.pi, iy)

@@ -7,6 +7,7 @@ as cold plasmas.
 """
 from abc import ABC, abstractmethod
 from typing import override
+import warnings
 
 import numpy as np
 from scipy import constants
@@ -14,13 +15,14 @@ from scipy import differentiate
 from scipy import integrate
 from scipy import linalg
 from scipy import special
+import matplotlib.pyplot as plt  # Temporary, for testing purposes
 
-from . import distribution as dist
+from relece import distributions as dist
 
 # Convert SI units to Gaussian for plasma calculations
-c = constants.centi * constants.speed_of_light  # m/s to cm/s
+c = constants.speed_of_light * 1e2        # m/s to cm/s
 e = constants.elementary_charge * c / 10  # C to statC
-m_e = constants.electron_mass * constants.gram  # kg to g
+m_e = constants.electron_mass * 1e3       # kg to g
 
 
 class Plasma(ABC):
@@ -40,7 +42,7 @@ class Plasma(ABC):
         distribution=None,
         collision_rate=1e-3
     ):
-        self.density = density * 1e6  # Convert to 1/cm^3
+        self.density = density * 1e-6  # Convert to 1/cm^3
         self.magnetic_field = magnetic_field * 1e4  # Convert to G
         self.temperature = temperature
         if distribution is None:
@@ -51,20 +53,12 @@ class Plasma(ABC):
         self.wce = self._get_cyclotron_frequency()
 
     def _get_plasma_frequency(self):
-        gamma_thermal = self._get_gamma_thermal()
-        wpe = np.sqrt(4 * np.pi * self.density * e**2 / gamma_thermal * m_e)
+        wpe = np.sqrt(4 * np.pi * self.density * e**2 / m_e)
         return wpe
 
     def _get_cyclotron_frequency(self):
-        gamma_thermal = self._get_gamma_thermal()
-        wce = e * self.magnetic_field / (gamma_thermal * m_e * c)
+        wce = e * self.magnetic_field / (m_e * c)
         return wce
-
-    def _get_gamma_thermal(self):
-        """Calculate the thermal Lorentz factor."""
-        v_thermal = np.sqrt(self.temperature * e * 1e7 / m_e)
-        gamma_thermal = 1 / np.sqrt(1 - (v_thermal / c)**2)
-        return gamma_thermal
 
     @abstractmethod
     def refractive_index(self, frequency, mode='O', angle=np.pi/2):
@@ -149,7 +143,7 @@ class Plasma(ABC):
                 self.refractive_index(frequency, mode, theta)),
             angle
         )
-        if np.any(not dn.success):
+        if not np.any(dn.success):
             self._raise_differentiation_warning()
 
         denom_helper = ((np.cos(angle) + (dn.df / n) * np.sin(angle))
@@ -230,13 +224,19 @@ class Plasma(ABC):
         maxterms=10
     ):
         w, s, e, n, initial_harmonic = self._j_alpha_helper(frequency, mode, angle)
+        if (n * np.cos(angle))**2 >= 1:
+            warnings.warn(
+                "Mode does not escape the plasma.",
+                RuntimeWarning
+            )
+            return np.nan
         nr = self.ray_refractive_index(frequency, mode, angle)
         j = self._sum_harmonics(
             self._j_n,
             initial_harmonic,
             tolerance,
             maxterms,
-            (mode, angle, n, nr, w, s, e)
+            angle, n, nr, w, s, e
         )
         return j
 
@@ -249,20 +249,26 @@ class Plasma(ABC):
         maxterms=10
     ):
         w, s, e, n, initial_harmonic = self._j_alpha_helper(frequency, mode, angle)
+        if (n * np.cos(angle))**2 >= 1:
+            warnings.warn(
+                "Mode does not escape the plasma.",
+                RuntimeWarning
+            )
+            return np.nan
         alpha = self._sum_harmonics(
             self._alpha_n,
             initial_harmonic,
             tolerance,
             maxterms,
-            (mode, angle, n, w, s, e)
+            angle, n, w, s, e
         )
         return alpha
 
     def _j_alpha_helper(self, frequency, mode, angle):
+        n = np.real(self.refractive_index(frequency, mode, angle))
         w = 2 * np.pi * frequency
         s = self.spectral_energy_flux_density(frequency, mode, angle)
         e = self.e_field_polarization(frequency, mode, angle)
-        n = self.refractive_index(frequency, mode, angle)
         initial_harmonic = np.rint(2 * np.pi * frequency / self.wce)
         return w, s, e, n, initial_harmonic
 
@@ -277,9 +283,10 @@ class Plasma(ABC):
         i = 1  # Principal harmonic offset
         counter = 1
 
-        while np.all(np.abs(cnext) > tolerance) and counter < maxterms:
+        while np.abs(cnext) > tolerance and counter < maxterms:
             c += cnext
             counter += 1
+            print(initial+i)
             cnext = cn(initial + i, *args)
             i *= -1
             if i > 0:
@@ -289,12 +296,12 @@ class Plasma(ABC):
             raise ValueError("Reached max terms without convergence.")
         return c
 
-    def _alpha_n(self, harmonic, mode, angle, n, w, s, e):
+    def _alpha_n(self, harmonic, angle, n, w, s, e):
         epsilon_a = self._integral_n(w, angle, n, harmonic, 'epsilon_a')
         alpha = w / (4 * np.pi) * np.vdot(e, epsilon_a @ e) / s
         return alpha
 
-    def _j_n(self, harmonic, mode, angle, n, nr, w, s, e):
+    def _j_n(self, harmonic, angle, n, nr, w, s, e):
         current_correlation_tensor = self._integral_n(
             w, angle, n, harmonic, 'G'
         )
@@ -302,12 +309,23 @@ class Plasma(ABC):
         return j
 
     def _integral_n(self, w, angle, n, harmonic, tensor):
+        """
+        Calculate the integral over the resonance ellipse.
+
+        `tensor` can be either 'epsilon_a' or 'G'.
+
+        [After R. W. Harvey *et al.* (1992).]
+        """
         x = (self.wpe / w)**2
         y = self.wce / w
         n_perp = n * np.sin(angle)
         n_par = n * np.cos(angle)
         theta = self.distribution.theta
-        a, r, u_par, u_perp = self._get_resonance_ellipse(n_par, y, theta, harmonic)
+        a_n, b_n, u_perp, u_par, real = self._get_resonance_ellipse(
+            n_par, y, theta, harmonic
+        )
+        if not real:
+            return np.zeros((3, 3))
 
         sn_bar = self._get_sn_bar_tensor(u_perp, u_par, y, n_perp, harmonic)
         if tensor == 'epsilon_a':
@@ -321,22 +339,31 @@ class Plasma(ABC):
                 * f * u_perp * sn_bar / gamma
             )
 
-        jacobian = 2 * np.pi * r * np.sin(theta) * r**2 / a
+        jacobian = np.pi * a_n**2 * b_n * np.sin(theta)
         integral_n = integrate.simpson(integrand * jacobian, theta)
+        print(integral_n)
         return integral_n
 
     @staticmethod
     def _get_resonance_ellipse(n_par, y, theta, harmonic):
-        """Defines the integration region imposed by the Dirac delta."""
-        # Define convenient helper variables.
-        a2 = 1 - n_par**2
-        a = np.sqrt(a2)
-        r = np.sqrt(np.abs(harmonic**2 * y**2 - a2) / a2)
-        a0 = n_par * harmonic * y / (1 - n_par**2)
+        """
+        Defines the integration region imposed by the Dirac delta.
 
-        u_perp = r * np.sin(theta)
-        u_par = a0 + (r / a) * np.cos(theta)
-        return a, r, u_par, u_perp
+        [After Freund *et al.* (1984).]
+        """
+        # eq. 10 - no real solution
+        # if (harmonic * y)**2 <= 1 - n_par**2:
+        #     return None, None, None, None, False
+
+        # eqs. 7-9
+        u_bar_n = np.sqrt(harmonic * y * n_par / (1 - n_par**2))
+        a_n = np.sqrt(((harmonic * y)**2 + n_par**2 - 1) / (1 - n_par**2))
+        b_n = a_n * np.sqrt(1 / (1 - n_par**2))
+
+        u_par = np.linspace(u_bar_n - b_n, u_bar_n + b_n, theta.size)
+        u_perp = a_n * np.sqrt(1 - (u_par - u_bar_n)**2 / b_n**2)  # eq. 6
+        plt.plot(u_par, u_perp)
+        return a_n, b_n, u_perp, u_par, True
 
     @staticmethod
     def _get_sn_bar_tensor(u_perp, u_par, y, n_perp, harmonic):
@@ -373,8 +400,9 @@ class Plasma(ABC):
         u = distribution.u
         theta = distribution.theta
         dfdu, dfdtheta = np.gradient(f, u, theta)
-        dfdu_perp = dfdu * np.cos(theta) - dfdtheta / u * np.sin(theta)
-        dfdu_par = dfdu * np.sin(theta) + dfdtheta / u * np.cos(theta)
+        u_grid, theta_grid = np.meshgrid(u, theta, indexing='ij')
+        dfdu_perp = dfdu * np.cos(theta_grid) - dfdtheta / u_grid * np.sin(theta_grid)
+        dfdu_par = dfdu * np.sin(theta_grid) + dfdtheta / u_grid * np.cos(theta_grid)
 
         # Shift gradient to 1D array over resonance ellipse.
         dperp_distribution = dist.Distribution(
@@ -477,7 +505,10 @@ class ColdPlasma(Plasma):
         if mode == 'X':
             delta *= -1
         elif mode != 'O':
-            raise ValueError("Invalid mode. Choose 'O' or 'X'.")
+            warnings.warn(
+                "Invalid mode. Defaulting to 'O'.",
+                RuntimeWarning
+            )
 
         n2_numerator = 2 * wpe2 * (w**2 - wpe2) / w**2
         n2_denominator = (
@@ -490,6 +521,11 @@ class ColdPlasma(Plasma):
 
     @override
     def e_field_polarization(self, frequency, mode='O', angle=np.pi/2):
+        """
+        Analytical field polarization in a cold plasma.
+
+        [After Stix (1992).]
+        """
         w = 2 * np.pi * frequency
         s, d, p = self._stix_coefficients(w)
         n = self.refractive_index(frequency, mode, angle)
@@ -506,13 +542,9 @@ class ColdPlasma(Plasma):
 
     def _stix_coefficients(self, w):
         """
-        Calculate coefficients used to describe wave dispersion [1]_.
+        Calculate coefficients used to describe wave dispersion.
 
-        References
-        ----------
-        .. [1] T. H. Stix, *Waves in Plasmas* (AIP Press, Melville, NY,
-           1992).
-
+        [After Stix (1992).]
         """
         if np.isclose(w, 0) or np.isclose(w, self.wce):
             raise ValueError(

@@ -1,2 +1,2 @@
-from .plasma import Plasma, ColdPlasma
-from .distribution import Distribution
+from .plasma_engine import Plasma, ColdPlasma
+from .distributions import Distribution

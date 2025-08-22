@@ -4,5 +4,8 @@ This package calculates the emission and absorption coefficients from supratherm
 A good summary of the problem and its implications can be found in section 5.2.3 of [[2](#bornatici1983)].
 
 ## References
-1. <a id="harvey1993"></a>R. W. Harvey, M. R. O'Brien, V. V. Rozhdestvensky, T. C. Luce, M. G. McCoy, and G. D. Kerbel, [Phys. Fluids B **5**, 446 (1993)](https://dx.doi.org/10.1063/1.860530).
-2. <a id="bornatici1983"></a>M. Bornatici, R. Cano, O. De Barbieri, and F. Engelmann, [Nucl. Fusion **23**, 1153 (1983)](https://dx.doi.org/10.1088/0029-5515/23/9/005).
+1. <a id="harvey1993"></a>R. W. Harvey, M. R. O'Brien, V. V. Rozhdestvensky, T. C. Luce, M. G. McCoy, and G. D. Kerbel, [Phys. Fluids B **5**, 446 (1993)](https://doi.org/10.1063/1.860530).
+2. <a id="bornatici1983"></a>M. Bornatici, R. Cano, O. De Barbieri, and F. Engelmann, [Nucl. Fusion **23**, 1153 (1983)](https://doi.org/10.1088/0029-5515/23/9/005).
+3. <a id="stix1992"></a>T. H. Stix, *Waves in Plasmas* (American Institute of Physics, New York, 1992).
+4. <a id="bekefi1966"></a>G. Bekefi, *Radiation Processes in Plasmas* (Wiley, New York, 1966).
+5. <a id="freund1984"></a>H. P. Freund, C. S. Wu, and J. D. Gaffey, Jr., [Phys. Fluids **27**, 1396 (1984)](https://doi.org/10.1063/1.864782).
