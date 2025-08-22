@@ -5,6 +5,11 @@ from scipy import interpolate
 from scipy import integrate
 
 
+# Convert SI units to Gaussian
+m_e = constants.m_e * 1e3  # kg to g
+c = constants.c * 1e2      # m/s to cm/s
+
+
 class Distribution:
     """
     Base class for arbitrary electron momentum distributions.
@@ -47,15 +52,14 @@ class Distribution:
 
     """
 
-    def __init__(self, f, u, theta, normalize=True, cql3d=True):
+    def __init__(self, f, u, theta, normalize=True):
         self._validate_input(f, u, theta)
-        if cql3d:
-            u /= constants.c  # Convert momentum per mass to normalized momentum
+        p = u * m_e
         if normalize:
-            self.f = self._normalize(f, u, theta)
+            self.f = self._normalize(f, p, theta)
         else:
             self.f = f
-        self.u = u
+        self.p = p
         self.theta = theta
 
     @staticmethod
@@ -66,20 +70,20 @@ class Distribution:
             raise ValueError("`f` must have shape ``(len(u), len(theta)).``")
 
     @staticmethod
-    def _normalize(f, u, theta):
-        """`f` is integrated over 3D normalized momentum space."""
-        jacobian = 2 * np.pi * u**2 * np.sin(theta)
-        integral = integrate.simpson(integrate.simpson(f * jacobian, u), theta)
+    def _normalize(f, p, theta):
+        """`f` is normalized over 3D momentum space."""
+        jacobian = 2 * np.pi * p**2 * np.sin(theta)
+        integral = integrate.simpson(integrate.simpson(f * jacobian, p), theta)
         return f / integral
 
-    def ev(self, u_perp, u_par):
+    def ev(self, p_perp, p_par):
         """Gets the interpolated points along the resonance ellipse."""
-        xi_u = np.sqrt(u_perp**2 + u_par**2)
-        xi_theta = np.arctan2(u_perp, u_par)
+        xi_p = np.sqrt(p_perp**2 + p_par**2)
+        xi_theta = np.arctan2(p_perp, p_par)
         f_interp = interpolate.interpn(
-            (self.u, self.theta),
+            (self.p, self.theta),
             self.f,
-            (xi_u, xi_theta),
+            (xi_p, xi_theta),
             bounds_error=False,
             fill_value=0
         )
@@ -110,23 +114,23 @@ class MaxwellJuttnerDistribution(Distribution):
         f, u, theta = self._define_distribution(temperature, jx, iy, enorm)
         super().__init__(f, u, theta, normalize=False)
 
+    def _define_distribution(self, temperature, jx, iy, enorm):
+        """Define the Maxwell-Jüttner distribution."""
+        gammanorm = 1 + 1e3 * enorm * constants.e / (constants.m_e * constants.c**2)
+        pnorm = np.sqrt(gammanorm**2 - 1) * m_e * c
+        p = np.linspace(0, pnorm, jx + 1)[1:]
+        theta = np.linspace(0, np.pi, iy + 2)[1:-1]
+        f_1D = self._relativistic_maxwellian(p, temperature)
+        f = np.tile(f_1D, (iy, 1)).T
+        return f, p, theta
+
     @staticmethod
-    def _relativistic_maxwellian(u, temperature):
+    def _relativistic_maxwellian(p, temperature):
         """
         Calculate the amplitude of the Maxwell-Jüttner distribution
         at normalized momentum `u`.
         """
         normalized_t = temperature * constants.e / (constants.m_e * constants.c**2)
-        gamma = np.hypot(1, u)
+        gamma = np.hypot(1, p / (m_e * c))
         normalization = 1 / (4 * np.pi * normalized_t * special.kv(2, 1 / normalized_t))
         return normalization * np.exp(-gamma / normalized_t)
-
-    def _define_distribution(self, temperature, jx, iy, enorm):
-        """Define the Maxwell-Jüttner distribution."""
-        gammanorm = 1 + 1e3 * enorm * constants.e / (constants.m_e * constants.c**2)
-        unorm = np.sqrt(gammanorm**2 - 1)
-        u = np.linspace(0, unorm, jx)
-        theta = np.linspace(0, np.pi, iy)
-        f_1D = self._relativistic_maxwellian(u, temperature)
-        f = np.tile(f_1D, (iy, 1)).T
-        return f, u, theta

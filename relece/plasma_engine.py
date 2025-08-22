@@ -298,15 +298,18 @@ class Plasma(ABC):
 
     def _alpha_n(self, harmonic, angle, n, w, s, e):
         epsilon_a = self._integral_n(w, angle, n, harmonic, 'epsilon_a')
-        alpha = w / (4 * np.pi) * np.vdot(e, epsilon_a @ e) / s
-        return alpha
+        alpha_n = w / (4 * np.pi) * np.vdot(e, epsilon_a @ e) / s
+        return alpha_n
 
     def _j_n(self, harmonic, angle, n, nr, w, s, e):
         current_correlation_tensor = self._integral_n(
             w, angle, n, harmonic, 'G'
         )
-        j = np.pi * nr**2 * (w / c)**2 * np.vdot(e, current_correlation_tensor @ e) / s
-        return j
+        j_n = (
+            np.pi * nr**2 * (w / c)**2
+            * np.vdot(e, current_correlation_tensor @ e) / s
+        )
+        return j_n
 
     def _integral_n(self, w, angle, n, harmonic, tensor):
         """
@@ -321,26 +324,30 @@ class Plasma(ABC):
         n_perp = n * np.sin(angle)
         n_par = n * np.cos(angle)
         theta = self.distribution.theta
-        a_n, b_n, u_perp, u_par, real = self._get_resonance_ellipse(
+        a_n, b_n, p_perp, p_par, real = self._get_resonance_ellipse(
             n_par, y, theta, harmonic
         )
         if not real:
             return np.zeros((3, 3))
 
-        sn_bar = self._get_sn_bar_tensor(u_perp, u_par, y, n_perp, harmonic)
+        sn = self._get_sn_tensor(p_perp, p_par, y, n_perp, harmonic)
+        sn = np.moveaxis(sn, -1, 0)  # sn: (3, 3, N) -> (N, 3, 3)
         if tensor == 'epsilon_a':
-            u_bar = self._get_u_bar(self.distribution, u_perp, u_par, y, n, harmonic)
-            integrand = -np.pi * x * (m_e * c)**3 * u_bar * sn_bar
+            uf = self._get_uf(self.distribution, p_perp, p_par, y, n, harmonic)
+            # Rebroadcast (N) -> (N, 1, 1)
+            integrand = -np.pi * x * np.expand_dims(uf, axis=(1, 2)) * sn
         else:
-            f = self.distribution.ev(u_perp, u_par)
-            gamma = np.sqrt(1 + u_perp**2 + u_par**2)
+            f = self.distribution.ev(p_perp, p_par)
+            gamma = np.sqrt(1 + (p_perp / (m_e * c))**2 + (p_par / (m_e * c))**2)
             integrand = (
-                np.pi / (2 * np.pi)**5 * x / m_e * (m_e * c)**5
-                * f * u_perp * sn_bar / gamma
+                np.pi / (2 * np.pi)**5 * x / m_e
+                * np.expand_dims(f * p_perp / gamma, axis=(1, 2))
+                * sn
             )
 
-        jacobian = np.pi * a_n**2 * b_n * np.sin(theta)
-        integral_n = integrate.simpson(integrand * jacobian, theta)
+        jacobian = np.pi * a_n**2 * b_n * np.expand_dims(np.sin(theta), axis=(1, 2))
+        # This integrates over each element in sn individually.
+        integral_n = integrate.simpson(integrand * jacobian, theta, axis=0)
         print(integral_n)
         return integral_n
 
@@ -348,6 +355,7 @@ class Plasma(ABC):
     def _get_resonance_ellipse(n_par, y, theta, harmonic):
         """
         Defines the integration region imposed by the Dirac delta.
+        Assumes ``n_par**2 < 1``.
 
         [After Freund *et al.* (1984).]
         """
@@ -356,66 +364,66 @@ class Plasma(ABC):
         #     return None, None, None, None, False
 
         # eqs. 7-9
-        u_bar_n = np.sqrt(harmonic * y * n_par / (1 - n_par**2))
-        a_n = np.sqrt(((harmonic * y)**2 + n_par**2 - 1) / (1 - n_par**2))
-        b_n = a_n * np.sqrt(1 / (1 - n_par**2))
+        u_bar_n = c * harmonic * y * n_par / (1 - n_par**2)
+        a_n = c * np.sqrt(((harmonic * y)**2 + n_par**2 - 1) / (1 - n_par**2))
+        b_n = a_n * 1 / np.sqrt(1 - n_par**2)
 
-        u_par = np.linspace(u_bar_n - b_n, u_bar_n + b_n, theta.size)
+        u_par = np.linspace(u_bar_n - b_n, u_bar_n + b_n, theta.size + 2)[1:-1]
         u_perp = a_n * np.sqrt(1 - (u_par - u_bar_n)**2 / b_n**2)  # eq. 6
-        plt.plot(u_par, u_perp)
-        return a_n, b_n, u_perp, u_par, True
+
+        p_perp = u_perp * m_e
+        p_par = u_par * m_e
+        return a_n, b_n, p_perp, p_par, True
 
     @staticmethod
-    def _get_sn_bar_tensor(u_perp, u_par, y, n_perp, harmonic):
-        """
-        :math:`\overline{S}_n` as defined by Smirnov and Harvey,
-        differing by a factor of ``1 / u_perp``.
-        """
-        b = np.abs(n_perp * u_perp / y)
+    def _get_uf(distribution, p_perp, p_par, y, n_par, harmonic):
+        """Equation 8, R. W. Harvey *et al.* (1993)."""
+        gamma = np.sqrt(1 + (p_perp / (m_e * c))**2 + (p_par / (m_e * c))**2)
+
+        f = distribution.f
+        p = distribution.p
+        theta = distribution.theta
+        dfdp, dfdtheta = np.gradient(f, p, theta)
+        p_grid, theta_grid = np.meshgrid(p, theta, indexing='ij')
+        dfdp_perp = dfdp * np.cos(theta_grid) - dfdtheta / p_grid * np.sin(theta_grid)
+        dfdp_par = dfdp * np.sin(theta_grid) + dfdtheta / p_grid * np.cos(theta_grid)
+
+        # Shift gradient to 1D array over resonance ellipse.
+        dperp_distribution = dist.Distribution(dfdp_perp, p, theta, normalize=False)
+        dpar_distribution = dist.Distribution(dfdp_par, p, theta, normalize=False)
+        dfdp_perp = dperp_distribution.ev(p_perp, p_par)
+        dfdp_par = dpar_distribution.ev(p_perp, p_par)
+
+        uf = (
+            harmonic * y * dfdp_perp
+            + n_par * p_perp * dfdp_par / (m_e * c)
+        ) / gamma
+        return uf
+
+    @staticmethod
+    def _get_sn_tensor(p_perp, p_par, y, n_perp, harmonic):
+        """Equation 9, R. W. Harvey *et al.* (1992)."""
+        b = np.abs(n_perp * p_perp / (m_e * c * y))
         jn = special.jv(harmonic, b)
         jnp = special.jvp(harmonic, b)
 
-        sn_xx = u_perp * (harmonic * jn / b)**2
-        sn_xy = -1j * u_perp * (harmonic * jn * jnp / b)
-        sn_xz = u_par * (harmonic * jn**2 / b)
+        sn_xx = p_perp * (harmonic * jn / b)**2
+        sn_xy = -1j * p_perp * (harmonic * jn * jnp / b)
+        sn_xz = p_par * (harmonic * jn**2 / b)
         sn_yx = np.conj(sn_xy)
-        sn_yy = u_perp * jnp**2
-        sn_yz = 1j * u_par * jn * jnp
+        sn_yy = p_perp * jnp**2
+        sn_yz = 1j * p_par * jn * jnp
         sn_zx = np.conj(sn_xz)
         sn_zy = np.conj(sn_yz)
-        sn_zz = u_par**2 / u_perp * jn**2
+        sn_zz = p_par**2 / p_perp * jn**2
 
-        sn_bar = np.array([
+        sn = np.array([
             [sn_xx, sn_xy, sn_xz],
             [sn_yx, sn_yy, sn_yz],
             [sn_zx, sn_zy, sn_zz]
         ])
-        return sn_bar
-
-    @staticmethod
-    def _get_u_bar(distribution, u_perp, u_par, y, n_par, harmonic):
-        gamma = np.sqrt(1 + u_perp**2 + u_par**2)
-
-        f = distribution.f
-        u = distribution.u
-        theta = distribution.theta
-        dfdu, dfdtheta = np.gradient(f, u, theta)
-        u_grid, theta_grid = np.meshgrid(u, theta, indexing='ij')
-        dfdu_perp = dfdu * np.cos(theta_grid) - dfdtheta / u_grid * np.sin(theta_grid)
-        dfdu_par = dfdu * np.sin(theta_grid) + dfdtheta / u_grid * np.cos(theta_grid)
-
-        # Shift gradient to 1D array over resonance ellipse.
-        dperp_distribution = dist.Distribution(
-            dfdu_perp, u, theta, normalize=False, cql3d=False
-        )
-        dpar_distribution = dist.Distribution(
-            dfdu_par, u, theta, normalize=False, cql3d=False
-        )
-        dfdu_perp = dperp_distribution.ev(u_perp, u_par)
-        dfdu_par = dpar_distribution.ev(u_perp, u_par)
-
-        u_bar = (harmonic * y * dfdu_perp + n_par * u_perp * dfdu_par) / gamma
-        return u_bar
+        print(sn[:,:,10])
+        return sn
 
 
 class ColdPlasma(Plasma):
