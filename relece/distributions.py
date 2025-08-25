@@ -3,6 +3,7 @@ from scipy import constants
 from scipy import special
 from scipy import interpolate
 from scipy import integrate
+import matplotlib.pyplot as plt
 
 
 # Convert SI units to Gaussian
@@ -111,7 +112,8 @@ class MaxwellJuttnerDistribution(Distribution):
     """
 
     def __init__(self, temperature, jx=300, iy=200, enorm=200):
-        f, u, theta = self._define_distribution(temperature, jx, iy, enorm)
+        f, p, theta = self._define_distribution(temperature, jx, iy, enorm)
+        u = p / m_e
         super().__init__(f, u, theta, normalize=False)
 
     def _define_distribution(self, temperature, jx, iy, enorm):
@@ -120,8 +122,8 @@ class MaxwellJuttnerDistribution(Distribution):
         pnorm = np.sqrt(gammanorm**2 - 1) * m_e * c
         p = np.linspace(0, pnorm, jx + 1)[1:]
         theta = np.linspace(0, np.pi, iy + 2)[1:-1]
-        f_1D = self._relativistic_maxwellian(p, temperature)
-        f = np.tile(f_1D, (iy, 1)).T
+        p_grid, _ = np.meshgrid(p, theta, indexing='ij')
+        f = self._relativistic_maxwellian(p_grid, temperature)
         return f, p, theta
 
     @staticmethod
