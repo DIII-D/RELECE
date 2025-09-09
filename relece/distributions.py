@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 # Convert SI units to Gaussian
 m_e = constants.m_e * 1e3  # kg to g
 c = constants.c * 1e2      # m/s to cm/s
+e = constants.e * c / 10   # C to statC
 
 
 class Distribution:
@@ -118,7 +119,8 @@ class MaxwellJuttnerDistribution(Distribution):
 
     def _define_distribution(self, temperature, jx, iy, enorm):
         """Define the Maxwell-Jüttner distribution."""
-        gammanorm = 1 + 1e3 * enorm * constants.e / (constants.m_e * constants.c**2)
+        enorm *= 1e11 * e / c  # keV to erg
+        gammanorm = 1 + enorm / (m_e * c**2)
         pnorm = np.sqrt(gammanorm**2 - 1) * m_e * c
         p = np.linspace(0, pnorm, jx + 1)[1:]
         theta = np.linspace(0, np.pi, iy + 2)[1:-1]
@@ -132,7 +134,8 @@ class MaxwellJuttnerDistribution(Distribution):
         Calculate the amplitude of the Maxwell-Jüttner distribution
         at normalized momentum `u`.
         """
-        normalized_t = temperature * constants.e / (constants.m_e * constants.c**2)
+        temperature *= 1e8 * e / c  # eV to erg
+        normalized_t = temperature / (m_e * c**2)
         gamma = np.hypot(1, p / (m_e * c))
         normalization = 1 / (4 * np.pi * normalized_t * special.kv(2, 1 / normalized_t))
         return normalization * np.exp(-gamma / normalized_t)
