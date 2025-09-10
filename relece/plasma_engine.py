@@ -351,34 +351,16 @@ class Plasma(ABC):
         [After Freund *et al.* (1984).]
 
         """
-        # u_bar_n = c * harmonic * y * n_par / (1 - n_par**2)
-        # a_n = c * np.sqrt(((harmonic * y)**2 + n_par**2 - 1) / (1 - n_par**2))
-        # b_n = a_n * 1 / np.sqrt(1 - n_par**2)
+        u_bar_n = c * harmonic * y * n_par / (1 - n_par**2)
+        a_n = c * np.sqrt(((harmonic * y)**2 + n_par**2 - 1) / (1 - n_par**2))
+        b_n = a_n * 1 / np.sqrt(1 - n_par**2)
 
-        # u_par = np.linspace(u_bar_n - b_n, u_bar_n + b_n, theta.size + 2)[1:-1]
-        # u_perp = a_n * np.sqrt(1 - (u_par - u_bar_n)**2 / b_n**2)  # eq. 6
+        u_par = np.linspace(u_bar_n - b_n, u_bar_n + b_n, theta.size + 2)[1:-1]
+        u_perp = a_n * np.sqrt(1 - (u_par - u_bar_n)**2 / b_n**2)  # eq. 6
 
-        # p_perp = u_perp * m_e
-        # p_par = u_par * m_e
-        # return a_n, b_n, p_perp, p_par
-        m = m_e
-        A=m*c
-        B=(1/(1/m**2/c**2-n_par**2/m**2/c**2))**0.5
-        #B=(1/(1/m**2/c**2-k_par**2/m**2/w**2))**0.5
-        C=2*harmonic*n_par*y/m/c
-        D=harmonic**2*y**2-1
-        a=(A**2*(D+B**2*C**2/4))**0.5
-        b=(B**2*(D+B**2*C**2/4))**0.5
-        d=B**2*C/2
-        #angle=np.linspace(0.001,0.999*pi,100)
-        dtheta=np.pi/len(theta)
-        #r=((a*cos(angle))**2+(b*sin(angle))**2)**0.5
-        #r=a*b/((b*cos(angle))**2+(a*sin(angle))**2)**0.5
-        r=a*b/((b*np.sin(theta))**2+(a*np.cos(theta))**2)**0.5
-        p_par=d+r*np.cos(theta)
-        p_perp=r*np.sin(theta)
-        # TODO: a and b are wrong return values.
-        return a, b, p_perp, p_par
+        p_perp = u_perp * m_e
+        p_par = u_par * m_e
+        return a_n, b_n, p_perp, p_par
 
     @staticmethod
     def _get_uf(distribution, p_perp, p_par, y, n_par, harmonic):

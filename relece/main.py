@@ -19,24 +19,23 @@ mode = 'X'
 plasma = plasma_engine.ColdPlasma(density, magnetic_field, temperature)
 f = plasma.distribution.f
 w = 2 * np.pi * frequency
-p = plasma.distribution.p / (m_e * c)
-p /= np.sqrt(1 + p**2)
+p_bar = plasma.distribution.p / (m_e * c)
 theta = plasma.distribution.theta
 n_par = plasma.refractive_index(frequency, mode, angle) * np.cos(angle)
-y = plasma.wce / (2 * np.pi * frequency)
+y = plasma.wce / w
 harmonic = 2
 
 _, _, p_perp, p_par = plasma._get_resonance_ellipse(n_par, y, theta, harmonic)
 gamma = np.sqrt(1 + (p_perp**2 + p_par**2) / (m_e * c)**2)
-print("This should be 0:", 1 - n_par * p_par / (gamma * m_e * c) - harmonic * y / gamma)
-p_ellipse = np.sqrt(np.real(p_perp)**2 + np.real(p_par)**2)
-print(p_perp)
-theta_ellipse = np.arctan2(np.real(p_perp), np.real(p_par))
+print("This should be 0:", gamma - n_par * p_par / (gamma * m_e * c) - harmonic * y)
+p_ellipse = np.sqrt(p_perp**2 + p_par**2)
+p_bar_ellipse = p_ellipse / (m_e * c)
+theta_ellipse = np.arctan2(p_perp, p_par)
 plt.plot(p_par, p_perp)
 
 fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
-heatmap = ax.pcolormesh(theta, p, f, shading='auto', cmap='plasma')
-ax.plot(theta_ellipse, p_ellipse)
+heatmap = ax.pcolormesh(theta, p_bar, f, shading='auto', cmap='plasma')
+ax.plot(theta_ellipse, p_bar_ellipse)
 plt.show()
 
 #emission = plasma.emission(frequency, mode, angle)
