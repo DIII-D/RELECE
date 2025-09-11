@@ -279,11 +279,6 @@ class Plasma(ABC):
             raise ValueError("Reached max terms without convergence.")
         return c
 
-    @staticmethod
-    def _check_ellipse(y, n_par, harmonic):
-        """Check if the resonance ellipse solution doesn't exist."""
-        return (harmonic * y)**2 <= 1 - n_par**2
-
     def _alpha_n(self, x, y, n_perp, n_par, harmonic, w, s, e):
         epsilon_a = self._integral_n(x, y, n_perp, n_par, harmonic, 'epsilon_a')
         alpha_n = w / (4 * np.pi) * np.vdot(e, epsilon_a @ e) / s
