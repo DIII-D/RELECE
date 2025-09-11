@@ -117,9 +117,12 @@ class MaxwellJuttnerDistribution(Distribution):
         enorm *= 1e11 * e / c  # keV to erg
         gammanorm = 1 + enorm / (m_e * c**2)
         pnorm = np.sqrt(gammanorm**2 - 1) * m_e * c
-        p = np.linspace(0, pnorm, jx + 1)[1:]
-        theta = np.linspace(0, np.pi, iy + 2)[1:-1]
-        p_grid, _ = np.meshgrid(p, theta, indexing='ij')
+        # p = np.linspace(0, pnorm, jx + 1)[1:]
+        # theta = np.linspace(0, np.pi, iy + 2)[1:-1]
+        p = np.linspace(0, pnorm, jx)
+        theta = np.linspace(0, np.pi, iy)
+        # p_grid, _ = np.meshgrid(p, theta, indexing='ij')
+        p_grid, _ = np.meshgrid(p, theta)
         f = self._relativistic_maxwellian(p_grid, temperature)
         return f, p, theta
 
