@@ -115,10 +115,9 @@ class Plasma(ABC):
            1966).
 
         """
-        n = np.real(self.refractive_index(frequency, mode, angle))
+        n = self.refractive_index(frequency, mode, angle)
         dn = differentiate.derivative(
-            lambda theta: np.real(
-                self.refractive_index(frequency, mode, theta)),
+            lambda theta: (self.refractive_index(frequency, mode, theta)),
             angle
         )
         denominator = differentiate.derivative(
@@ -136,11 +135,9 @@ class Plasma(ABC):
 
     def _ray_refraction_denom_helper(self, frequency, mode, angle):
         """Important quantity for ray refractive index calculation"""
-        n = np.real(self.refractive_index(
-            frequency, mode, angle))
+        n = self.refractive_index(frequency, mode, angle)
         dn = differentiate.derivative(
-            lambda theta: np.real(
-                self.refractive_index(frequency, mode, theta)),
+            lambda theta: self.refractive_index(frequency, mode, theta),
             angle
         )
         if not np.any(dn.success):
@@ -206,7 +203,7 @@ class Plasma(ABC):
         tolerance=1e-6,
         maxterms=10
     ):
-        n = np.real(self.refractive_index(frequency, mode, angle))
+        n = self.refractive_index(frequency, mode, angle)
         if (n * np.cos(angle))**2 >= 1:
             warnings.warn(
                 "Mode does not escape the plasma.",
@@ -226,7 +223,7 @@ class Plasma(ABC):
         tolerance=1e-6,
         maxterms=10
     ):
-        n = np.real(self.refractive_index(frequency, mode, angle))
+        n = self.refractive_index(frequency, mode, angle)
         if (n * np.cos(angle))**2 >= 1:
             warnings.warn(
                 "Mode does not escape the plasma.",
@@ -238,12 +235,18 @@ class Plasma(ABC):
         )
         return alpha
 
-    def _j_alpha_helper(self, frequency, mode, angle):
+    def _j_alpha_helper(self, frequency, mode, angle, n):
         w = 2 * np.pi * frequency
+        x = (self.wpe / w)**2
+        y = self.wce / w
+
+        n_perp = n * np.sin(angle)
+        n_par = n * np.cos(angle)
+        initial = np.ceil(np.sqrt(1 - n_par**2) / y)  # Lower bound for real roots
+
         s = self.spectral_energy_flux_density(frequency, mode, angle)
         e = self.e_field_polarization(frequency, mode, angle)
-        initial_harmonic = np.rint(2 * np.pi * frequency / self.wce)
-        return w, s, e, initial_harmonic
+        return w, x, y, n_perp, n_par, initial, s, e
 
     def _sum_harmonics(self, frequency, mode, angle, n, tolerance, maxterms, term):
         """
@@ -252,34 +255,21 @@ class Plasma(ABC):
         The function starts at ``n = initial`` and sums outward from there.
 
         """
-        w, s, e, initial = self._j_alpha_helper(frequency, mode, angle)
-        x = self.wce / w
-        y = (self.wpe / w)**2
-        n_perp = n * np.sin(angle)
-        n_par = n * np.cos(angle)
+        (w, x, y, n_perp, 
+         n_par, initial, s, e) = self._j_alpha_helper(frequency, mode, angle, n)
         c = 0
         if term == 'absorption':
             cn = lambda harmonic: self._alpha_n(x, y, n_perp, n_par, harmonic, w, s, e)
         else:
             nr = self.ray_refractive_index(frequency, mode, angle)
             cn = lambda harmonic: self._j_n(x, y, n_perp, n_par, nr, harmonic, w, s, e)
-        skip = self._check_ellipse(y, n_par, initial)
-        if skip:
-            cnext = 0
-        else:
-            cnext = cn(initial)
+        cnext = cn(initial)
         i = 1  # Principal harmonic offset
         counter = 1
 
-        while (skip or np.abs(cnext) > tolerance) and counter < maxterms:
+        while np.abs(cnext) > tolerance and counter < maxterms:
             c += cnext
             counter += 1
-            skip = self._check_ellipse(y, n_par, initial + i)
-            if skip:
-                cnext = 0
-                counter -= 1  # Don't count skipped terms
-            else:
-                cnext = cn(initial + i)
             i *= -1
             if i > 0:
                 i += 1
@@ -355,25 +345,27 @@ class Plasma(ABC):
         a_n = c * np.sqrt(((harmonic * y)**2 + n_par**2 - 1) / (1 - n_par**2))
         b_n = a_n * 1 / np.sqrt(1 - n_par**2)
 
-        u_par = np.linspace(u_bar_n - b_n, u_bar_n + b_n, theta.size + 2)[1:-1]
+        u_par = np.linspace(u_bar_n - b_n, u_bar_n + b_n, theta.size)
         u_perp = a_n * np.sqrt(1 - (u_par - u_bar_n)**2 / b_n**2)  # eq. 6
 
-        p_perp = u_perp * m_e
-        p_par = u_par * m_e
+        p_perp = m_e * u_perp
+        p_par = m_e * u_par
         return a_n, b_n, p_perp, p_par
 
     @staticmethod
     def _get_uf(distribution, p_perp, p_par, y, n_par, harmonic):
         """Equation 8, R. W. Harvey *et al.* (1993)."""
-        gamma = np.sqrt(1 + (p_perp / (m_e * c))**2 + (p_par / (m_e * c))**2)
+        gamma = np.sqrt(1 + (p_perp**2 + p_par**2) / (m_e * c)**2)
 
         f = distribution.f
         p = distribution.p
         theta = distribution.theta
-        dfdp, _ = np.gradient(f, p, theta)
-        _, theta_grid = np.meshgrid(p, theta, indexing='ij')
-        dfdp_perp = dfdp * np.sin(theta_grid)
-        dfdp_par = dfdp * np.cos(theta_grid)
+        dfdp, dfdtheta = np.gradient(f, p, theta)
+        p_grid, theta_grid = np.meshgrid(p, theta, indexing='ij')
+        dfdp_perp = (dfdp * np.sin(theta_grid)
+                     + dfdtheta / p_grid * np.cos(theta_grid))
+        dfdp_par  = (dfdp * np.cos(theta_grid)
+                     - dfdtheta / p_grid * np.sin(theta_grid))
 
         # Shift gradient to 1D array over resonance ellipse.
         dperp_distribution = dist.Distribution(dfdp_perp, p, theta, normalize=False)
@@ -490,13 +482,12 @@ class ColdPlasma(Plasma):
            1992).
 
         """
-        w = 2 * np.pi * frequency
-        # Effective plasma and cyclotron frequencies squared
-        wpe2 = self.wpe**2 * w / (w + 1j * self.collision_rate)
-        wce2 = self.wce**2 * w / (w + 1j * self.collision_rate)
+        w2 = (2 * np.pi * frequency)**2
+        wpe2 = self.wpe**2
+        wce2 = self.wce**2
 
-        delta = np.sqrt(wce2 * np.sin(angle)**4 + 4 * (w**2 - wpe2)**2
-                        * np.cos(angle)**2 / w**2)
+        delta = np.sqrt(wce2 * np.sin(angle)**4 + 4 * (w2 - wpe2)**2
+                        * np.cos(angle)**2 / w2)
         if mode == 'X':
             delta *= -1
         elif mode != 'O':
@@ -505,14 +496,14 @@ class ColdPlasma(Plasma):
                 RuntimeWarning
             )
 
-        n2_numerator = 2 * wpe2 * (w**2 - wpe2) / w**2
+        n2_numerator = 2 * wpe2 * (w2 - wpe2) / w2
         n2_denominator = (
-            2 * (w**2 - wpe2)
+            2 * (w2 - wpe2)
             - wce2 * np.sin(angle)**2
             + np.sqrt(wce2) * delta
         )
         n2 = 1 - (n2_numerator / n2_denominator)
-        return np.sqrt(n2)
+        return np.real(np.sqrt(n2))
 
     @override
     def e_field_polarization(self, frequency, mode='O', angle=np.pi/2):
@@ -520,6 +511,7 @@ class ColdPlasma(Plasma):
         Analytical field polarization in a cold plasma.
 
         [After Stix (1992).]
+
         """
         w = 2 * np.pi * frequency
         s, d, p = self._stix_coefficients(w)
@@ -587,7 +579,7 @@ class ColdPlasma(Plasma):
     def _get_vg_magnitude(self, w, mode, angle):
         """Calculate the magnitude of the group velocity."""
         dkdw = differentiate.derivative(
-                lambda w_: w_ * np.real(self.refractive_index(w_ / (2 * np.pi), mode, angle)) / c,
+                lambda w_: w_ * self.refractive_index(w_ / (2 * np.pi), mode, angle) / c,
                 w
         )
         return 1 / dkdw.df
