@@ -308,21 +308,34 @@ class Plasma(ABC):
         )
 
         sn = self._get_sn_tensor(p_perp, p_par, y, n_perp, harmonic)
+        gamma = np.sqrt(1 + (p_perp / (m_e * c))**2 + (p_par / (m_e * c))**2)
         if tensor == 'epsilon_a':
             uf = self._get_uf(self.distribution, p_perp, p_par, y, n_par, harmonic)
             # Rebroadcast (N) -> (N, 1, 1)
             integrand = -np.pi * x * np.expand_dims(uf, axis=(1, 2)) * sn
         else:
             f = self.distribution.ev(p_perp, p_par)
-            gamma = np.sqrt(1 + (p_perp / (m_e * c))**2 + (p_par / (m_e * c))**2)
             integrand = (
                 np.pi / (2 * np.pi)**5 * x / m_e
                 * np.expand_dims(f * p_perp / gamma, axis=(1, 2))
                 * sn
             )
 
-        jacobian = np.pi * a_n**2 * b_n * np.expand_dims(np.sin(theta), axis=(1, 2))
-        # This integrates over each element in sn individually.
+        # Calculate the gradient of the delta function argument, g
+        g_p_perp = (
+            p_perp / (gamma * (m_e * c)**2)
+            + n_par * p_par * p_perp / (gamma**4 * (m_e * c)**3)
+        )
+        g_p_par = (
+            p_par / (gamma * (m_e * c)**2)
+            + n_par * p_par**2 / (gamma**4 * (m_e * c)**3)
+            - n_par / (gamma * m_e * c)
+        )
+        grad_g = np.hypot(g_p_perp, g_p_par)
+
+        # Jacobian incorporates the transformation of the delta function
+        jacobian = (2 * np.pi * a_n**2 * b_n
+                    * np.expand_dims(np.sin(theta), axis=(1, 2)) / grad_g)
         integral_n = integrate.simpson(integrand * jacobian, theta, axis=0)
         # print(integral_n)
         return integral_n
