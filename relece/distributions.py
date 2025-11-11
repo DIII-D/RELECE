@@ -1,15 +1,9 @@
 import numpy as np
-from scipy import constants
+from scipy.constants import m_e, c, e
 from scipy import special
 from scipy import interpolate
 from scipy import integrate
 import matplotlib.pyplot as plt
-
-
-# Convert SI units to Gaussian
-m_e = constants.m_e * 1e3  # kg to g
-c = constants.c * 1e2      # m/s to cm/s
-e = constants.e * c / 10   # C to statC
 
 
 class Distribution:
@@ -51,13 +45,16 @@ class Distribution:
 
     def __init__(self, f, u, theta, normalize=True):
         self._validate_input(f, u, theta)
-        p = u * m_e
+        p = u / c
         if normalize:
             self.f = self._normalize(f, p, theta)
         else:
             self.f = f
         self.p = p
         self.theta = theta
+        self._spline = interpolate.RectBivariateSpline(
+            self.p, self.theta, self.f
+        )
 
     @staticmethod
     def _validate_input(f, u, theta):
@@ -69,22 +66,31 @@ class Distribution:
     @staticmethod
     def _normalize(f, p, theta):
         """`f` is normalized over 3D momentum space."""
-        jacobian = 2 * np.pi * p**2 * np.sin(theta)
-        integral = integrate.simpson(integrate.simpson(f * jacobian, p), theta)
+        jacobian = 2 * np.pi * p[:, None]**2 * np.sin(theta[None, :])
+        integral = integrate.simpson(integrate.simpson(f * jacobian, p, axis=0), theta)
+
+        if np.isclose(integral, 1.0):
+            return f
+        print(f"Distribution is not normalized (momentum volume is {integral}).\
+              Normalizing...")
         return f / integral
 
     def ev(self, p_perp, p_par):
         """Gets the interpolated points along the resonance ellipse."""
-        xi_p = np.sqrt(p_perp**2 + p_par**2)
-        xi_theta = np.arctan2(p_perp, p_par)
-        f_interp = interpolate.interpn(
-            (self.p, self.theta),
-            self.f,
-            (xi_p, xi_theta),
-            bounds_error=False,
-            fill_value=0
-        )
-        return f_interp
+        p = np.hypot(p_perp, p_par)
+        theta = np.arctan2(p_perp, p_par)
+        return self._spline(p, theta, grid=False)
+
+    def grad(self, p_perp, p_par):
+        """Gets the gradient of the distribution at given points."""
+        p = np.hypot(p_perp, p_par)
+        theta = np.arctan2(p_perp, p_par)
+        grad_p = self._spline(p, theta, dx=1, dy=0, grid=False)
+        grad_theta = self._spline(p, theta, dx=0, dy=1, grid=False) / p
+
+        grad_par = grad_p * np.cos(theta) - grad_theta * np.sin(theta)
+        grad_perp = grad_p * np.sin(theta) + grad_theta * np.cos(theta)
+        return grad_perp, grad_par
 
 
 class MaxwellJuttnerDistribution(Distribution):
@@ -109,20 +115,18 @@ class MaxwellJuttnerDistribution(Distribution):
 
     def __init__(self, temperature, jx=300, iy=200, enorm=200):
         f, p, theta = self._define_distribution(temperature, jx, iy, enorm)
-        u = p / m_e
+        u = p * c
         super().__init__(f, u, theta, normalize=False)
 
     def _define_distribution(self, temperature, jx, iy, enorm):
         """Define the Maxwell-Jüttner distribution."""
-        enorm *= 1e11 * e / c  # keV to erg
-        gammanorm = 1 + enorm / (m_e * c**2)
-        pnorm = np.sqrt(gammanorm**2 - 1) * m_e * c
-        # p = np.linspace(0, pnorm, jx + 1)[1:]
-        # theta = np.linspace(0, np.pi, iy + 2)[1:-1]
+        enorm *= 1e3 * m_e * c**2 / e  # keV to mc^2
+        gammanorm = 1 + enorm
+        pnorm = np.sqrt(gammanorm**2 - 1)
+        print("pnorm:", pnorm)
         p = np.linspace(0, pnorm, jx)
         theta = np.linspace(0, np.pi, iy)
-        # p_grid, _ = np.meshgrid(p, theta, indexing='ij')
-        p_grid, _ = np.meshgrid(p, theta)
+        p_grid, _ = np.meshgrid(p, theta, indexing='ij')
         f = self._relativistic_maxwellian(p_grid, temperature)
         return f, p, theta
 
@@ -132,8 +136,8 @@ class MaxwellJuttnerDistribution(Distribution):
         Calculate the amplitude of the Maxwell-Jüttner distribution
         at momentum `p`.
         """
-        temperature *= 1e8 * e / c  # eV to erg
-        normalized_t = temperature / (m_e * c**2)
+        temperature *= m_e * c**2 / e  # eV to mc^2
         gamma = np.hypot(1, p / (m_e * c))
-        normalization = 1 / (4 * np.pi * normalized_t * special.kv(2, 1 / normalized_t))
-        return normalization * np.exp(-gamma / normalized_t)
+        k2 = special.kv(2, 1.0 / temperature)
+        prefactor = 4 * np.pi * temperature * k2
+        return np.exp(-gamma / temperature) / prefactor

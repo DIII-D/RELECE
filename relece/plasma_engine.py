@@ -220,7 +220,7 @@ class Plasma(ABC):
         frequency,
         mode='O',
         angle=np.pi/2,
-        tolerance=1e-6,
+        tolerance=1e-5,
         maxterms=10
     ):
         n = self.refractive_index(frequency, mode, angle)
@@ -267,16 +267,17 @@ class Plasma(ABC):
         i = 1  # Principal harmonic offset
         counter = 1
 
-        while np.abs(cnext) > tolerance and counter < maxterms:
+        # while np.abs(cnext) > tolerance and counter < maxterms:
+        while counter < maxterms:
             c += cnext
             counter += 1
             i *= -1
             if i > 0:
                 i += 1
-            print(cnext)
+            cnext = cn(initial + i)
 
-        if counter == maxterms:
-            raise ValueError("Reached max terms without convergence.")
+        # if counter == maxterms:
+        #     raise ValueError("Reached max terms without convergence.")
         return c
 
     def _alpha_n(self, x, y, n_perp, n_par, harmonic, w, s, e):
@@ -335,7 +336,7 @@ class Plasma(ABC):
 
         # Jacobian incorporates the transformation of the delta function
         jacobian = (2 * np.pi * a_n**2 * b_n
-                    * np.expand_dims(np.sin(theta), axis=(1, 2)) / grad_g)
+                    * np.expand_dims(np.sin(theta) / grad_g, axis=(1, 2)))
         integral_n = integrate.simpson(integrand * jacobian, theta, axis=0)
         # print(integral_n)
         return integral_n
@@ -350,11 +351,11 @@ class Plasma(ABC):
 
         """
         u_bar_n = c * harmonic * y * n_par / (1 - n_par**2)
-        a_n = c * np.sqrt(((harmonic * y)**2 + n_par**2 - 1) / (1 - n_par**2))
-        b_n = a_n * 1 / np.sqrt(1 - n_par**2)
+        a_n = c * np.sqrt(((harmonic * y)**2 + n_par**2 - 1))
+        b_n = a_n / (1 - n_par**2)
 
-        u_par = np.linspace(u_bar_n - b_n, u_bar_n + b_n, theta.size)
-        u_perp = a_n * np.sqrt(1 - (u_par - u_bar_n)**2 / b_n**2)  # eq. 6
+        u_par = u_bar_n + b_n * np.cos(theta)
+        u_perp = a_n * np.sin(theta)
 
         p_perp = m_e * u_perp
         p_par = m_e * u_par
@@ -364,22 +365,7 @@ class Plasma(ABC):
     def _get_uf(distribution, p_perp, p_par, y, n_par, harmonic):
         """Equation 8, R. W. Harvey *et al.* (1993)."""
         gamma = np.sqrt(1 + (p_perp**2 + p_par**2) / (m_e * c)**2)
-
-        f = distribution.f
-        p = distribution.p
-        theta = distribution.theta
-        dfdp, dfdtheta = np.gradient(f, p, theta)
-        p_grid, theta_grid = np.meshgrid(p, theta, indexing='ij')
-        dfdp_perp = (dfdp * np.sin(theta_grid)
-                     + dfdtheta / p_grid * np.cos(theta_grid))
-        dfdp_par  = (dfdp * np.cos(theta_grid)
-                     - dfdtheta / p_grid * np.sin(theta_grid))
-
-        # Shift gradient to 1D array over resonance ellipse.
-        dperp_distribution = dist.Distribution(dfdp_perp, p, theta, normalize=False)
-        dpar_distribution = dist.Distribution(dfdp_par, p, theta, normalize=False)
-        dfdp_perp = dperp_distribution.ev(p_perp, p_par)
-        dfdp_par = dpar_distribution.ev(p_perp, p_par)
+        dfdp_perp, dfdp_par = distribution.grad(p_perp, p_par)
 
         uf = (
             harmonic * y * dfdp_perp
@@ -581,7 +567,6 @@ class ColdPlasma(Plasma):
             frequency, n, mode, angle
         )
         spectral_energy_flux_density = spectral_energy_density * vg_magnitude
-        print(spectral_energy_flux_density)
         return spectral_energy_flux_density
 
     def _get_vg_magnitude(self, w, mode, angle):
