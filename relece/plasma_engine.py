@@ -60,7 +60,7 @@ class Plasma(ABC):
         return wce
 
     @abstractmethod
-    def refractive_index(self, frequency, mode='O', angle=np.pi/2) -> np.ndarray:
+    def refractive_index(self, frequency, mode='O', angle=np.pi/2) -> float:
         """
         Calculate the refractive index for a given wave.
 
@@ -210,10 +210,11 @@ class Plasma(ABC):
                 RuntimeWarning
             )
             return np.nan
+        j0 = m_e * self.wpe**2 / (4 * np.pi**2 * c)
         j = self._sum_harmonics(
             frequency, mode, angle, n, tolerance, maxterms, 'emission'
         )
-        return j
+        return j0 * j
 
     def absorption(
         self,
@@ -230,10 +231,11 @@ class Plasma(ABC):
                 RuntimeWarning
             )
             return np.nan
+        alpha0 = -self.wpe**2 / (frequency * c)
         alpha = self._sum_harmonics(
             frequency, mode, angle, n, tolerance, maxterms, 'absorption'
         )
-        return alpha
+        return alpha0 * alpha
 
     def _j_alpha_helper(self, frequency, mode, angle, n):
         w = 2 * np.pi * frequency
@@ -282,17 +284,14 @@ class Plasma(ABC):
 
     def _alpha_n(self, x, y, n_perp, n_par, harmonic, w, s, e):
         epsilon_a = self._integral_n(x, y, n_perp, n_par, harmonic, 'epsilon_a')
-        alpha_n = w / (4 * np.pi) * np.vdot(e, epsilon_a @ e) / s
+        alpha_n = np.vdot(e, epsilon_a @ e) / s
         return np.real(alpha_n)
 
     def _j_n(self, x, y, n_perp, n_par, nr, harmonic, w, s, e):
         current_correlation_tensor = self._integral_n(
             x, y, n_perp, n_par, harmonic, 'G'
         )
-        j_n = (
-            np.pi * nr**2 * (w / c)**2
-            * np.vdot(e, current_correlation_tensor @ e) / s
-        )
+        j_n = (nr**2 * np.vdot(e, current_correlation_tensor @ e) / s)
         return np.real(j_n)
 
     def _integral_n(self, x, y, n_perp, n_par, harmonic, tensor):
@@ -309,20 +308,17 @@ class Plasma(ABC):
         )
 
         sn = self._get_sn_tensor(p_perp, p_par, y, n_perp, harmonic)
-        gamma = np.sqrt(1 + (p_perp / (m_e * c))**2 + (p_par / (m_e * c))**2)
+        gamma = np.sqrt(1 + p_perp**2 + p_par**2)
         if tensor == 'epsilon_a':
             uf = self._get_uf(self.distribution, p_perp, p_par, y, n_par, harmonic)
             # Rebroadcast (N) -> (N, 1, 1)
-            integrand = -np.pi * x * np.expand_dims(uf, axis=(1, 2)) * sn
+            integrand = np.expand_dims(uf, axis=(1, 2)) * sn
         else:
             f = self.distribution.ev(p_perp, p_par)
-            integrand = (
-                np.pi / (2 * np.pi)**5 * x / m_e
-                * np.expand_dims(f * p_perp / gamma, axis=(1, 2))
-                * sn
-            )
+            integrand = (np.expand_dims(f * p_perp / gamma, axis=(1, 2)) * sn)
 
         # Calculate the gradient of the delta function argument, g
+        # TODO: Recalculate with nondimensionalized momenta
         g_p_perp = (
             p_perp / (gamma * (m_e * c)**2)
             + n_par * p_par * p_perp / (gamma**4 * (m_e * c)**3)
@@ -364,19 +360,16 @@ class Plasma(ABC):
     @staticmethod
     def _get_uf(distribution, p_perp, p_par, y, n_par, harmonic):
         """Equation 8, R. W. Harvey *et al.* (1993)."""
-        gamma = np.sqrt(1 + (p_perp**2 + p_par**2) / (m_e * c)**2)
+        gamma = np.sqrt(1 + p_perp**2 + p_par**2)
         dfdp_perp, dfdp_par = distribution.grad(p_perp, p_par)
 
-        uf = (
-            harmonic * y * dfdp_perp
-            + n_par * p_perp * dfdp_par / (m_e * c)
-        ) / gamma
+        uf = (harmonic * y * dfdp_perp + n_par * p_perp * dfdp_par) / gamma
         return uf
 
     @staticmethod
     def _get_sn_tensor(p_perp, p_par, y, n_perp, harmonic):
         """Equation 9, R. W. Harvey *et al.* (1992)."""
-        b = np.abs(n_perp * p_perp / (m_e * c * y))
+        b = np.abs(n_perp * p_perp / y)
         jn = special.jv(harmonic, b)
         jnp = special.jvp(harmonic, b)
 
@@ -497,7 +490,9 @@ class ColdPlasma(Plasma):
             + np.sqrt(wce2) * delta
         )
         n2 = 1 - (n2_numerator / n2_denominator)
-        return np.real(np.sqrt(n2))
+        # if n2 <= 0:
+        #     return 0.0
+        return np.sqrt(n2)
 
     @override
     def e_field_polarization(self, frequency, mode='O', angle=np.pi/2):
@@ -539,6 +534,7 @@ class ColdPlasma(Plasma):
         p = 1 - self.wpe**2 / w**2
         return s, d, p
 
+    #TODO: Move to Plasma base class
     def spectral_energy_flux_density(self, frequency, mode='O', angle=np.pi/2):
         """
         Calculate the energy flux density per frequency per unit volume
@@ -569,13 +565,12 @@ class ColdPlasma(Plasma):
         spectral_energy_flux_density = spectral_energy_density * vg_magnitude
         return spectral_energy_flux_density
 
-    def _get_vg_magnitude(self, w, mode, angle):
-        """Calculate the magnitude of the group velocity."""
-        dkdw = differentiate.derivative(
-                lambda w_: w_ * self.refractive_index(w_ / (2 * np.pi), mode, angle) / c,
-                w
-        )
-        return 1 / dkdw.df
+    def _get_vg_magnitude(self, f, mode, angle):
+        """Calculate the magnitude of the group velocity, v_g/c."""
+        dn = differentiate.derivative(
+                lambda f_: self.refractive_index(f_, mode, angle), f)
+        vg_norm = 1 / (self.refractive_index(f, mode, angle) + f * dn.df)
+        return vg_norm
 
     def _get_spectral_energy_density(self, frequency, n, mode, angle):
         w = 2 * np.pi * frequency
