@@ -39,7 +39,7 @@ class Plasma(ABC):
         magnetic_field,
         temperature=0.0,
         distribution=None,
-        collision_rate=0
+        collision_rate=0.0
     ):
         self.density = density * 1e-6  # Convert to 1/cm^3
         self.magnetic_field = magnetic_field * 1e4  # Convert to G
@@ -317,22 +317,18 @@ class Plasma(ABC):
             f = self.distribution.ev(p_perp, p_par)
             integrand = (np.expand_dims(f * p_perp / gamma, axis=(1, 2)) * sn)
 
-        # Calculate the gradient of the delta function argument, g
-        # TODO: Recalculate with nondimensionalized momenta
-        g_p_perp = (
-            p_perp / (gamma * (m_e * c)**2)
-            + n_par * p_par * p_perp / (gamma**4 * (m_e * c)**3)
-        )
-        g_p_par = (
-            p_par / (gamma * (m_e * c)**2)
-            + n_par * p_par**2 / (gamma**4 * (m_e * c)**3)
-            - n_par / (gamma * m_e * c)
-        )
+        # Calculate the gradient of the delta function argument,
+        # g(p_perp, p_par)
+        g_p_perp = (p_perp + n_par * p_par * p_perp / gamma**2) / gamma
+        g_p_par = (p_par - n_par * (1 - p_par**2 / gamma**2)) / gamma
         grad_g = np.hypot(g_p_perp, g_p_par)
 
-        # Jacobian incorporates the transformation of the delta function
-        jacobian = (2 * np.pi * a_n**2 * b_n
-                    * np.expand_dims(np.sin(theta) / grad_g, axis=(1, 2)))
+        # Apply delta function and convert to angular integral
+        jacobian = 2 * np.pi * np.expand_dims(
+            (p_perp * np.sqrt((a_n * np.cos(theta))**2 + (b_n * np.sin(theta))**2)
+             / grad_g),
+            axis=(1, 2)
+        )
         integral_n = integrate.simpson(integrand * jacobian, theta, axis=0)
         # print(integral_n)
         return integral_n
@@ -346,15 +342,13 @@ class Plasma(ABC):
         [After Freund *et al.* (1984).]
 
         """
-        u_bar_n = c * harmonic * y * n_par / (1 - n_par**2)
-        a_n = c * np.sqrt(((harmonic * y)**2 + n_par**2 - 1))
-        b_n = a_n / (1 - n_par**2)
+        p_n = harmonic * y * n_par / (1 - n_par**2)
+        b_n = np.sqrt((harmonic * y)**2 - (1 - n_par**2)) / (1 - n_par**2)
+        a_n = b_n * np.sqrt(1 - n_par**2)
 
-        u_par = u_bar_n + b_n * np.cos(theta)
-        u_perp = a_n * np.sin(theta)
+        p_perp = a_n * np.sin(theta)
+        p_par = p_n + b_n * np.cos(theta)
 
-        p_perp = m_e * u_perp
-        p_par = m_e * u_par
         return a_n, b_n, p_perp, p_par
 
     @staticmethod

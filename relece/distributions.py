@@ -43,13 +43,10 @@ class Distribution:
 
     """
 
-    def __init__(self, f, u, theta, normalize=True):
+    def __init__(self, f, u, theta):
         self._validate_input(f, u, theta)
-        p = u / c
-        if normalize:
-            self.f = self._normalize(f, p, theta)
-        else:
-            self.f = f
+        p = u / (1e2 * c)  # c is in SI units, u in CGS.
+        self.f = self._normalize(f, p, theta)
         self.p = p
         self.theta = theta
         self._spline = interpolate.RectBivariateSpline(
@@ -113,14 +110,14 @@ class MaxwellJuttnerDistribution(Distribution):
 
     """
 
-    def __init__(self, temperature, jx=300, iy=200, enorm=200):
+    def __init__(self, temperature, jx=300, iy=200, enorm=400):
         f, p, theta = self._define_distribution(temperature, jx, iy, enorm)
-        u = p * c
-        super().__init__(f, u, theta, normalize=False)
+        u = p * (1e2 * c)  # c is in SI units, u in CGS.
+        super().__init__(f, u, theta)
 
     def _define_distribution(self, temperature, jx, iy, enorm):
         """Define the Maxwell-Jüttner distribution."""
-        enorm *= 1e3 * m_e * c**2 / e  # keV to mc^2
+        enorm *= 1e3 * e / (m_e * c**2)  # keV to mc^2
         gammanorm = 1 + enorm
         pnorm = np.sqrt(gammanorm**2 - 1)
         print("pnorm:", pnorm)
@@ -136,8 +133,8 @@ class MaxwellJuttnerDistribution(Distribution):
         Calculate the amplitude of the Maxwell-Jüttner distribution
         at momentum `p`.
         """
-        temperature *= m_e * c**2 / e  # eV to mc^2
-        gamma = np.hypot(1, p / (m_e * c))
+        temperature *= e / (m_e * c**2)  # eV to mc^2
+        gamma = np.hypot(1, p)
         k2 = special.kv(2, 1.0 / temperature)
         prefactor = 4 * np.pi * temperature * k2
         return np.exp(-gamma / temperature) / prefactor
